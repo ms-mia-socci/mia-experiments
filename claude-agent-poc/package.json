@@ -1,0 +1,23 @@
+{
+  "name": "claude-agent-poc",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "agent",
+    "web"
+  ],
+  "scripts": {
+    "check": "npm run check --workspaces",
+    "build": "npm run build --workspaces",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "dev": "npm run dev -w web",
+    "deploy": "node scripts/deploy.mjs"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1127.0",
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

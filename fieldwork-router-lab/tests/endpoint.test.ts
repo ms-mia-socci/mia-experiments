@@ -1,0 +1,2 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {codexBaseUrl} from '../src/lib/server/openai-endpoint.ts';
+test('regional endpoint is preserved and never silently defaults',()=>{assert.equal(codexBaseUrl('https://us.api.openai.com'),'https://us.api.openai.com/v1');assert.equal(codexBaseUrl('https://us.api.openai.com/v1/'),'https://us.api.openai.com/v1');for(const input of [undefined,'','http://us.api.openai.com','https://key@us.api.openai.com','https://us.api.openai.com?key=secret'])assert.throws(()=>codexBaseUrl(input));});

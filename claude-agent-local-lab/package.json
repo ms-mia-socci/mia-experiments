@@ -1,0 +1,23 @@
+{
+  "name": "claude-agent-local-lab",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "agent",
+    "web"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "check": "npm run check --workspaces",
+    "build": "npm run build --workspaces",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@aws/agentcore": "0.28.1",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "@types/node": "^24.0.0",
+    "@playwright/test": "^1.58.0"
+  }
+}

@@ -1,0 +1,5 @@
+import {readFileSync,mkdirSync} from 'node:fs';import {parseEnv} from 'node:util';import {resolve} from 'node:path';import {Codex} from '@openai/codex-sdk';
+const e=parseEnv(readFileSync('../.env','utf8'));const url=new URL(e.OPENAI_API_ENDPOINT);if(url.pathname==='/')url.pathname='/v1';const home=resolve('.local/home'),cwd=resolve('.local/codex-smoke');mkdirSync(cwd,{recursive:true});
+mkdirSync(resolve(home,".codex"),{recursive:true,mode:0o700});
+const sdk=new Codex({apiKey:e.OPENAI_API_KEY,baseUrl:url.toString().replace(/\/$/,''),env:{PATH:process.env.PATH,HOME:home,CODEX_HOME:resolve(home,'.codex')},config:{web_search:'disabled'}});
+try{const t=sdk.startThread({workingDirectory:cwd,skipGitRepoCheck:true,sandboxMode:'read-only',approvalPolicy:'never',networkAccessEnabled:false,webSearchMode:'disabled'});const r=await t.run('Respond with exactly: REGIONAL_CODEX_OK. Do not use tools.',{signal:AbortSignal.timeout(60000)});console.log(JSON.stringify({response:r.finalResponse,usage:r.usage}));}catch(error){console.log(String(error.message).replaceAll(e.OPENAI_API_KEY,'[REDACTED]'));process.exitCode=1;}

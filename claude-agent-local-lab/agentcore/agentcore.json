@@ -1,0 +1,6 @@
+{
+  "name": "ClaudeLocalLab",
+  "version": 1,
+  "runtimes": [{"name":"ClaudeAgui","build":"CodeZip","entrypoint":"src/server.ts","codeLocation":"agent/","runtimeVersion":"NODE_22","protocol":"AGUI","networkMode":"PUBLIC"}],
+  "memories": [], "credentials": [], "evaluators": [], "onlineEvalConfigs": [], "agentCoreGateways": [], "policyEngines": []
+}

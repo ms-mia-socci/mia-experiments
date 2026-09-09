@@ -1,0 +1,10 @@
+node_modules/
+.svelte-kit/
+build/
+dist/
+.local/
+.env*
+agentcore/.cli/
+__pycache__/
+playwright-report/
+test-results/

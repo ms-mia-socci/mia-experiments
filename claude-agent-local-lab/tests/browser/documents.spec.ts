@@ -1,0 +1,22 @@
+import {test,expect} from '@playwright/test';
+test('document save requires approval and downloads exact content only to owner',async({page,browser})=>{
+ await page.goto('/auth/login');await page.getByRole('button',{name:'Continue as Mia'}).click();
+ await page.getByRole('textbox',{name:'Message Claude'}).fill('Save a file called ag-ui-research.txt containing exactly: AG-UI connects agents and user interfaces.');
+ await page.getByRole('button',{name:'Send message'}).click();
+ await expect(page.getByRole('heading',{name:'Save ag-ui-research.txt?'})).toBeVisible({timeout:60000});
+ const id=await page.evaluate(()=>localStorage.getItem('poc-thread'));
+ const url=`/api/threads/${id}/documents/ag-ui-research.txt`;
+ expect((await page.request.get(url)).status()).toBe(404);
+ const pending=await (await page.request.get(`/api/threads/${id}`)).json();
+ await page.getByRole('button',{name:'Approve change'}).click();
+ await expect(page.locator('.status')).toHaveText('Complete',{timeout:60000});
+ await page.getByRole('button',{name:'Changes',exact:true}).click();
+ await expect(page.locator('.inspector').getByRole('link',{name:'Download ag-ui-research.txt'})).toBeVisible();
+ const downloaded=await page.request.get(url);expect(downloaded.status()).toBe(200);expect(await downloaded.text()).toBe(pending.pendingApproval.content);
+ const tim=await browser.newContext({baseURL:'http://127.0.0.1:5273'});const other=await tim.newPage();
+ await other.goto('/auth/login');await other.getByRole('button',{name:'Continue as Tim'}).click();expect((await other.request.get(url)).status()).toBe(404);await tim.close();
+ await page.reload();await page.getByRole('button',{name:'Changes',exact:true}).click();await expect(page.locator('.inspector').getByRole('link',{name:'Download ag-ui-research.txt'})).toBeVisible();
+ await page.getByRole('textbox',{name:'Message Claude'}).fill('Replace ag-ui-research.txt with exactly: Replacement text.');await page.getByRole('button',{name:'Send message'}).click();
+ await expect(page.getByRole('button',{name:'Deny',exact:true})).toBeVisible({timeout:60000});await page.getByRole('button',{name:'Deny',exact:true}).click();
+ await expect(page.locator('.status')).toHaveText('Complete',{timeout:60000});expect(await (await page.request.get(url)).text()).toBe(pending.pendingApproval.content);
+});

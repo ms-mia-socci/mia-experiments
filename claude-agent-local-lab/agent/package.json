@@ -1,0 +1,21 @@
+{
+  "name": "@local-lab/agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "start": "node dist/agent/src/server.js"
+  },
+  "dependencies": {
+    "@ag-ui/core": "0.0.59",
+    "@ag-ui/encoder": "0.0.59",
+    "@anthropic-ai/claude-agent-sdk": "0.3.263",
+    "playwright": "^1.63.0",
+    "sanitize-html": "^2.17.7",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/sanitize-html": "^2.16.1"
+  }
+}

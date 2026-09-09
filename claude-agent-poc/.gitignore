@@ -1,0 +1,14 @@
+node_modules/
+.svelte-kit/
+build/
+dist/
+.terraform/
+*.tfstate*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+.env*
+!.env.example
+.local/
+playwright-report/
+test-results/

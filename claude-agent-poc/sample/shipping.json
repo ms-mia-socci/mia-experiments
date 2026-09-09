@@ -1,0 +1,6 @@
+{
+  "currency": "USD",
+  "standardShipping": 7,
+  "freeShippingThreshold": 100,
+  "expressShipping": 15
+}
