@@ -969,40 +969,6 @@ i {
   }
 }
 @media (max-width: 680px) {
-  .sidebar {
-    width: 64px;
-    padding: 20px 9px;
-  }
-  .sidebar .brand {
-    margin: 0 3px 30px;
-  }
-  .sidebar .brand-word,
-  .workspace-label,
-  .history-label,
-  .sidebar nav,
-  .sidebar-bottom .local-status,
-  .person-footer > span:not(.avatar),
-  .person-footer form {
-    display: none;
-  }
-  .new-conversation {
-    font-size: 0 !important;
-    padding: 0 !important;
-    justify-content: center !important;
-  }
-  .new-conversation svg {
-    width: 18px;
-  }
-  .sidebar-bottom {
-    margin-top: auto;
-  }
-  .person-footer {
-    justify-content: center;
-  }
-  .sidebar .brand-mark {
-    width: 35px;
-    height: 35px;
-  }
   .topbar {
     padding: 0 18px;
     font-size: 10px;
@@ -1590,4 +1556,84 @@ i {
 }
 .task-input:focus-within {
   border-color: #a3b592 !important;
+}
+
+.sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 38px;
+}
+.sidebar .sidebar-heading .brand {
+  margin: 0;
+  gap: 8px;
+}
+.sidebar-heading .brand-word {
+  font-size: 24px;
+}
+.collapse-sidebar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #829173;
+  cursor: pointer;
+}
+.collapse-sidebar:hover {
+  background: #e1e7d8;
+}
+.sidebar.collapsed {
+  width: 72px;
+  padding: 30px 12px 20px;
+  align-items: center;
+}
+.rail-brand {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.rail-open {
+  flex: 1;
+  width: calc(100% + 24px);
+  border: 0;
+  background: transparent;
+  cursor: e-resize;
+  margin: 8px -12px;
+}
+.rail-profile {
+  margin: 0;
+}
+.rail-profile .avatar {
+  border: 0;
+  cursor: pointer;
+}
+.rail-brand:focus-visible,
+.rail-open:focus-visible,
+.collapse-sidebar:focus-visible,
+.rail-profile button:focus-visible {
+  outline: 2px solid #829173;
+  outline-offset: 3px;
+}
+@media (max-width: 680px) {
+  .sidebar:not(.collapsed) {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 244px;
+    z-index: 30;
+    box-shadow: 12px 0 28px #28332318;
+  }
+  .sidebar.collapsed {
+    width: 64px;
+    padding: 20px 9px;
+  }
+  .rail-brand .brand-mark {
+    width: 35px;
+    height: 35px;
+  }
 }

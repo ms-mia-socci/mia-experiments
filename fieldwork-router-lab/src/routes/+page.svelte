@@ -37,6 +37,7 @@
     ShieldCheck,
     Sparkles,
     PanelRight,
+    PanelLeftClose,
     Download,
   } from "@lucide/svelte";
   import { catalog, frameworkName, type Framework } from "$lib/catalog";
@@ -71,6 +72,11 @@
   let draftFiles = $state<PromptInput.PromptInputAttachmentData[]>([]);
   let uploads = $state<AttachmentRef[]>([]);
   let uploading = $state(false);
+  let sidebarCollapsed = $state(false);
+  function setSidebarCollapsed(value: boolean) {
+    sidebarCollapsed = value;
+    localStorage.setItem("fieldwork-sidebar-collapsed", String(value));
+  }
   const usage = $derived(latestUsage(events));
   const tools = $derived(toolActivity(events, busy));
   const activeName = $derived(
@@ -303,6 +309,11 @@
   }
   onMount(() => {
     if (!data.user) return;
+    const savedSidebar = localStorage.getItem("fieldwork-sidebar-collapsed");
+    sidebarCollapsed =
+      savedSidebar === null
+        ? window.matchMedia("(max-width: 680px)").matches
+        : savedSidebar === "true";
     void (async () => {
       await loadThreads();
       const id = localStorage.getItem("fieldwork-router-thread");
@@ -419,55 +430,94 @@
   </div>
 {:else}
   <div class="workspace">
-    <aside class="sidebar">
-      <button class="brand" onclick={home} disabled={busy}
-        >{@render brand()}</button
-      >
-      <div class="workspace-label eyebrow">
-        MIA EXPERIMENTS <span>LAB 02</span>
-      </div>
-      <Button
-        variant="outline"
-        class="new-conversation"
-        aria-label="New conversation"
-        onclick={home}
-        disabled={busy}><Plus size={17} /><span>New conversation</span></Button
-      >
-      <p class="eyebrow history-label">YOUR CONVERSATIONS</p>
-      <nav>
-        {#each threads as t}<button
-            class:selected={current?.id === t.id}
-            class="thread-link"
-            onclick={() => select(t.id)}
-            disabled={busy}
-            ><span class="thread-dot"
-              >{t.framework === "claude"
-                ? "✳"
-                : t.framework === "codex"
-                  ? "›"
-                  : "○"}</span
-            ><span
-              ><strong>{t.title}</strong><small
-                >{t.phase === "routing"
-                  ? "Finding a fit"
-                  : frameworkName(t.framework!)}</small
-              ></span
-            ></button
-          >{/each}{#if !threads.length}<p class="empty-history">
-            A fresh page.<br />Your next idea starts here.
-          </p>{/if}
-      </nav>
-      <div class="sidebar-bottom">
-        <p class="local-status"><i></i>Local workspace</p>
-        <div class="person-footer">
-          <span class="avatar">{data.user.name[0]}</span><span
-            ><strong>{data.user.name}</strong><small>Demo identity</small></span
+    <aside
+      class="sidebar"
+      class:collapsed={sidebarCollapsed}
+      aria-label="Conversation sidebar"
+    >
+      {#if sidebarCollapsed}
+        <button
+          class="rail-brand"
+          aria-label="Expand sidebar"
+          aria-expanded="false"
+          onclick={() => setSidebarCollapsed(false)}
+          ><span class="brand-mark">f.</span></button
+        >
+        <button
+          class="rail-open"
+          aria-label="Expand conversation history"
+          aria-expanded="false"
+          onclick={() => setSidebarCollapsed(false)}
+        ></button>
+        <form class="rail-profile" action="/auth/logout" method="POST">
+          <button
+            class="avatar"
+            aria-label={`Switch person (${data.user.name})`}
+            title={`Switch person (${data.user.name})`}
+            >{data.user.name[0]}</button
           >
-          <form action="/auth/logout" method="POST">
-            <button aria-label="Switch person"><LogOut size={19} /></button>
-          </form>
+        </form>
+      {:else}
+        <div class="sidebar-heading">
+          <button class="brand" onclick={home} disabled={busy}
+            >{@render brand()}</button
+          >
+          <button
+            class="collapse-sidebar"
+            aria-label="Collapse sidebar"
+            aria-expanded="true"
+            onclick={() => setSidebarCollapsed(true)}
+            ><PanelLeftClose size={18} /></button
+          >
         </div>
-      </div>
+        <div class="workspace-label eyebrow">
+          MIA EXPERIMENTS <span>LAB 02</span>
+        </div>
+        <Button
+          variant="outline"
+          class="new-conversation"
+          aria-label="New conversation"
+          onclick={home}
+          disabled={busy}
+          ><Plus size={17} /><span>New conversation</span></Button
+        >
+        <p class="eyebrow history-label">YOUR CONVERSATIONS</p>
+        <nav>
+          {#each threads as t}<button
+              class:selected={current?.id === t.id}
+              class="thread-link"
+              onclick={() => select(t.id)}
+              disabled={busy}
+              ><span class="thread-dot"
+                >{t.framework === "claude"
+                  ? "✳"
+                  : t.framework === "codex"
+                    ? "›"
+                    : "○"}</span
+              ><span
+                ><strong>{t.title}</strong><small
+                  >{t.phase === "routing"
+                    ? "Finding a fit"
+                    : frameworkName(t.framework!)}</small
+                ></span
+              ></button
+            >{/each}{#if !threads.length}<p class="empty-history">
+              A fresh page.<br />Your next idea starts here.
+            </p>{/if}
+        </nav>
+        <div class="sidebar-bottom">
+          <p class="local-status"><i></i>Local workspace</p>
+          <div class="person-footer">
+            <span class="avatar">{data.user.name[0]}</span><span
+              ><strong>{data.user.name}</strong><small>Demo identity</small
+              ></span
+            >
+            <form action="/auth/logout" method="POST">
+              <button aria-label="Switch person"><LogOut size={19} /></button>
+            </form>
+          </div>
+        </div>
+      {/if}
     </aside>
     <main class="main-work">
       <header class="topbar">
