@@ -15,13 +15,18 @@
     type AttachmentRef,
   } from "$lib/attachments";
   import UsageIndicator from "$lib/components/UsageIndicator.svelte";
-  import { latestUsage } from "$lib/usage";
   import * as Tool from "$lib/components/ai-elements/tool";
   import * as Sources from "$lib/components/ai-elements/sources";
   import * as Plan from "$lib/components/ai-elements/plan";
   import { citedSources, toolActivity } from "$lib/activity";
   import { onMount } from "svelte";
-  import { HttpAgent } from "@ag-ui/client";
+  import { HttpAgent, type Message as AgentMessage } from "@ag-ui/client";
+  import {
+    chatMessages,
+    replayEvents,
+    emptyWorkspaceState,
+    type WorkspaceState,
+  } from "$lib/agui";
   import * as PromptInput from "$lib/components/ai-elements/prompt-input";
   import * as Conversation from "$lib/components/ai-elements/conversation";
   import * as Message from "$lib/components/ai-elements/message";
@@ -81,8 +86,10 @@
     sidebarCollapsed = value;
     localStorage.setItem("fieldwork-sidebar-collapsed", String(value));
   }
-  const usage = $derived(latestUsage(events));
-  const tools = $derived(toolActivity(events, busy));
+  let agentMessages = $state<AgentMessage[]>([]);
+  let workspaceState = $state<WorkspaceState>(emptyWorkspaceState());
+  const usage = $derived(workspaceState.usage);
+  const tools = $derived(toolActivity(agentMessages, busy));
   const activeName = $derived(
     current?.phase === "routing"
       ? "Strands coordinator"
@@ -155,26 +162,23 @@
       messages = current!.messages;
       events = value.events;
       busy = current!.status === "running";
-      if (busy) {
-        const live: ChatMessage[] = [];
-        for (const e of events) {
-          if (e.type === "TEXT_MESSAGE_START")
-            live.push({
-              id: e.messageId,
-              role: "assistant",
-              content: "",
-              agent:
-                current!.phase === "routing"
-                  ? "coordinator"
-                  : current!.framework!,
-            });
-          if (e.type === "TEXT_MESSAGE_CONTENT") {
-            const m = live.find((m) => m.id === e.messageId);
-            if (m) m.content += e.delta;
-          }
-        }
-        messages = [...messages, ...live];
-      }
+      const restored = await replayEvents(
+        $state.snapshot(events),
+        $state.snapshot(current!.messages),
+      );
+      if (current?.id !== id || version !== refreshVersion || connected) return;
+      agentMessages = restored.messages;
+      workspaceState = restored.state;
+      messages = chatMessages(
+        agentMessages,
+        current!.phase === "routing" ? "coordinator" : current!.framework!,
+      );
+      // Persisted ownership/approval decisions remain authoritative after replay.
+      recommendation = current!.recommendation;
+      approval =
+        current!.pendingApproval?.status === "pending"
+          ? current!.pendingApproval
+          : null;
     }
   }
   async function select(id: string) {
@@ -199,6 +203,8 @@
     current = t;
     messages = [];
     events = [];
+    agentMessages = [];
+    workspaceState = emptyWorkspaceState();
     documents = [];
     uploads = [];
     recommendation = null;
@@ -213,6 +219,8 @@
     refreshVersion++;
     messages = [];
     events = [];
+    agentMessages = [];
+    workspaceState = emptyWorkspaceState();
     documents = [];
     uploads = [];
     recommendation = null;
@@ -269,6 +277,8 @@
       connected = true;
       prompt = "";
       events = [];
+      agentMessages = [];
+      workspaceState = emptyWorkspaceState();
       if (handoff) {
         current = { ...t, phase: "active", framework: handoff };
         recommendation = null;
@@ -290,6 +300,7 @@
           { id: crypto.randomUUID(), role: "user", content: text },
         ],
       });
+      let receivedSnapshot = false;
       await agent.runAgent(
         {
           forwardedProps: {
@@ -298,36 +309,33 @@
           },
         },
         {
-          onEvent: ({ event: e }) => {
-            events = [...events, e];
-            if (e.type === "RUN_STARTED") draftFiles = [];
-            const v = e as any;
-            if (e.type === "TEXT_MESSAGE_START")
-              messages = [
-                ...messages,
-                {
-                  id: v.messageId,
-                  role: "assistant",
-                  content: "",
-                  agent:
-                    current?.phase === "routing"
-                      ? "coordinator"
-                      : current!.framework!,
-                },
-              ];
-            if (e.type === "TEXT_MESSAGE_CONTENT")
-              messages = messages.map((m) =>
-                m.id === v.messageId
-                  ? { ...m, content: m.content + v.delta }
-                  : m,
-              );
-            if (e.type === "CUSTOM") {
-              if (v.name === "route_recommended") recommendation = v.value;
-              if (v.name === "approval_requested") approval = v.value;
-              if (v.name === "approval_resolved") approval = null;
-              if (v.name === "document_saved") void refresh();
-            }
-            if (e.type === "RUN_ERROR") notice = v.message;
+          onEvent: ({ event }) => {
+            events = [...events, event];
+          },
+          onRunStartedEvent: () => {
+            draftFiles = [];
+          },
+          onMessagesSnapshotEvent: () => {
+            receivedSnapshot = true;
+          },
+          onMessagesChanged: ({ messages: updated }) => {
+            if (!receivedSnapshot) return;
+            agentMessages = [...updated];
+            messages = chatMessages(
+              updated,
+              current?.phase === "routing"
+                ? "coordinator"
+                : current!.framework!,
+            );
+          },
+          onStateChanged: ({ state }) => {
+            workspaceState = { ...emptyWorkspaceState(), ...state };
+            recommendation = workspaceState.recommendation;
+            approval = workspaceState.approval;
+            documents = workspaceState.documents;
+          },
+          onRunErrorEvent: ({ event }) => {
+            notice = event.message;
           },
         },
       );
@@ -460,26 +468,33 @@
       <section class="person-panel">
         <p class="eyebrow">FIRST, MAKE YOURSELF AT HOME</p>
         <h2>Who’s here today?</h2>
-        <form method="POST" action="/auth/person">
-          {#each ["mia", "tim"] as person}<button
-              name="person"
-              value={person}
-              class="person-choice"
-              ><span class="avatar">{person[0].toUpperCase()}</span><span
-                ><strong
-                  >{person === "mia" ? "Mia Socci" : "Tim Ritzema"}</strong
-                ><small>Your own conversations & files</small></span
-              ><ArrowRight size={20} /></button
-            >{/each}
-        </form>
+        {#if data.cloudLogin}<a class="person-choice" href="/auth/login"
+            >Sign in to Fieldwork →</a
+          >{:else}
+          <form method="POST" action="/auth/person">
+            {#each ["mia", "tim"] as person}<button
+                name="person"
+                value={person}
+                class="person-choice"
+                ><span class="avatar">{person[0].toUpperCase()}</span><span
+                  ><strong
+                    >{person === "mia" ? "Mia Socci" : "Tim Ritzema"}</strong
+                  ><small>Your own conversations & files</small></span
+                ><ArrowRight size={20} /></button
+              >{/each}
+          </form>
+        {/if}
         <p class="muted small">
-          Demo identities for this local experiment. Organizational sign-in
-          comes with the cloud deployment.
+          {data.cloudLogin
+            ? "Sign in with your invited account to access your workspace."
+            : "Demo identities for this local experiment."}
         </p>
       </section>
     </main>
     <footer>
-      Built for curiosity.<span>Local experiment · Svelte AI Elements</span>
+      Built for curiosity.<span
+        >{data.cloudLogin ? "AWS workspace" : "Local experiment"} · Svelte AI Elements</span
+      >
     </footer>
   </div>
 {:else}
@@ -575,7 +590,9 @@
             </p>{/if}
         </nav>
         <div class="sidebar-bottom">
-          <p class="local-status"><i></i>Local workspace</p>
+          <p class="local-status">
+            <i></i>{data.cloudLogin ? "AWS workspace" : "Local workspace"}
+          </p>
           <div class="person-footer">
             <a
               class="avatar"
@@ -805,16 +822,24 @@
                       state="approval-requested"
                       class="approval-card"
                       ><Confirmation.Title
-                        >Save {approval.filename}?</Confirmation.Title
+                        >{approval.kind === "code"
+                          ? "Run Python in AWS?"
+                          : `Save ${approval.filename}?`}</Confirmation.Title
                       >
                       <p>{approval.reason}</p>
                       <details>
-                        <summary>Review file contents</summary>
+                        <summary
+                          >{approval.kind === "code"
+                            ? "Review code and files"
+                            : "Review file contents"}</summary
+                        >
                         <pre>{approval.content}</pre>
                       </details>
                       <Confirmation.Actions
                         ><Confirmation.Action onclick={() => decide("approved")}
-                          >Approve save</Confirmation.Action
+                          >{approval.kind === "code"
+                            ? "Run in AWS"
+                            : "Approve save"}</Confirmation.Action
                         ><Confirmation.Action
                           variant="outline"
                           onclick={() => decide("denied")}
@@ -833,7 +858,7 @@
               <p>
                 {current.phase === "routing"
                   ? "You decide which agent takes it from here."
-                  : "Review agent output. Saving a file requires your approval."}
+                  : "Review agent output. File saves and code execution require your approval."}
               </p>
             </div>
           </section>
@@ -888,6 +913,22 @@
                   </div>{:else if tab === "Activity"}<p class="eyebrow">
                     TOOLS & EVENTS
                   </p>
+                  {#if workspaceState.observability}<div class="trace-card">
+                      <div>
+                        <strong>Cloud trace</strong>
+                        <small
+                          >Session grouped · Fieldwork spans exclude content</small
+                        >
+                      </div>
+                      <code title={workspaceState.observability.traceId}
+                        >{workspaceState.observability.traceId}</code
+                      >
+                      <a
+                        href={workspaceState.observability.consoleUrl}
+                        target="_blank"
+                        rel="noreferrer">Open in CloudWatch ↗</a
+                      >
+                    </div>{/if}
                   {#each tools as tool (tool.id)}<Tool.Root
                       class="activity-tool"
                       ><Tool.Header
@@ -900,7 +941,19 @@
                         /></Tool.Content
                       ></Tool.Root
                     >{/each}
-                  {#if !tools.length}<p class="muted">
+                  {#each agentMessages.filter((m) => m.role === "activity") as activity (activity.id)}
+                    {#if activity.role === "activity"}
+                      <details class="event-log" open>
+                        <summary
+                          >{activity.activityType.replaceAll("_", " ")}</summary
+                        >
+                        <pre>{JSON.stringify(activity.content, null, 2)}</pre>
+                      </details>
+                    {/if}
+                  {/each}
+                  {#if !workspaceState.observability && !tools.length && !agentMessages.some((m) => m.role === "activity")}<p
+                      class="muted"
+                    >
                       Tool activity appears here when the agent uses a tool.
                     </p>{/if}
                   <details class="event-log">
@@ -910,9 +963,7 @@
                       </div>{/each}
                   </details>{:else if tab === "Memory"}
                   <p class="eyebrow">RECALLED FOR THIS RUN</p>
-                  {@const recall = events.findLast(
-                    (e) => e.type === "CUSTOM" && e.name === "memory_recalled",
-                  )?.value}
+                  {@const recall = workspaceState.memory}
                   <p class="muted">
                     {recall?.status ||
                       "Memory activity appears when you send a message."}

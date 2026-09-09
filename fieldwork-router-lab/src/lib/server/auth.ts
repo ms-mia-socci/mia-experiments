@@ -8,6 +8,8 @@ export function requireOrigin(event: RequestEvent) {
     error(403, "Invalid request origin");
 }
 export function available() {
+  if (process.env.FIELDWORK_SERVICE === "web")
+    return { strands: true, claude: true, codex: true };
   return {
     strands: !!process.env.ANTHROPIC_API_KEY,
     claude: !!process.env.ANTHROPIC_API_KEY,

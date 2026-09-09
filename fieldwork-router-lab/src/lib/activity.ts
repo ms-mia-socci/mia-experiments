@@ -1,3 +1,4 @@
+import type { Message } from "@ag-ui/core";
 export function citedSources(markdown: string) {
   const sources = new Map<string, { url: string; title: string }>();
   // Only explicit Markdown citations, not inferred URLs or generated download links.
@@ -20,41 +21,48 @@ function parse(value: string) {
     return value;
   }
 }
-export function toolActivity(events: any[], running: boolean) {
-  return events
-    .filter((e) => e.type === "TOOL_CALL_START")
-    .map((e) => {
-      const args = events
-        .filter(
-          (a) => a.type === "TOOL_CALL_ARGS" && a.toolCallId === e.toolCallId,
-        )
-        .map((a) => a.delta)
-        .join("");
-      const result = events.find(
-        (a) => a.type === "TOOL_CALL_RESULT" && a.toolCallId === e.toolCallId,
-      );
-      const output = result ? parse(result.content) : undefined;
-      const error =
-        output?.error ||
-        (output?.is_error ? "Tool reported an error." : undefined) ||
-        (!result && !running ? "Run ended without a tool result." : undefined);
-      return {
-        id: e.toolCallId,
-        name: e.toolCallName,
-        input: parse(args || "{}"),
-        output,
-        error: typeof error === "string" ? error : JSON.stringify(error),
-        state: (error
-          ? "output-error"
-          : result
-            ? "output-available"
-            : args
-              ? "input-available"
-              : "input-streaming") as
-          | "output-error"
-          | "output-available"
-          | "input-available"
-          | "input-streaming",
-      };
-    });
+export function toolActivity(messages: Message[], running: boolean) {
+  return messages.flatMap((message) =>
+    message.role !== "assistant"
+      ? []
+      : (message.toolCalls || []).map((call) => {
+          const result = messages.find(
+            (m) => m.role === "tool" && m.toolCallId === call.id,
+          );
+          const output =
+            result && result.role === "tool"
+              ? parse(result.content)
+              : undefined;
+          const error =
+            output?.error ||
+            (output?.is_error ? "Tool reported an error." : undefined) ||
+            (output?.executed === false
+              ? output.message || "Code was not executed."
+              : undefined) ||
+            (typeof output?.exitCode === "number" && output.exitCode !== 0
+              ? output.stderr || `Code exited with status ${output.exitCode}.`
+              : undefined) ||
+            (!result && !running
+              ? "Run ended without a tool result."
+              : undefined);
+          return {
+            id: call.id,
+            name: call.function.name,
+            input: parse(call.function.arguments || "{}"),
+            output,
+            error: typeof error === "string" ? error : JSON.stringify(error),
+            state: (error
+              ? "output-error"
+              : result
+                ? "output-available"
+                : call.function.arguments
+                  ? "input-available"
+                  : "input-streaming") as
+              | "output-error"
+              | "output-available"
+              | "input-available"
+              | "input-streaming",
+          };
+        }),
+  );
 }

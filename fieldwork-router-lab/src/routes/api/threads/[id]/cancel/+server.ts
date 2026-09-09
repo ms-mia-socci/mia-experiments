@@ -1,15 +1,23 @@
 import { error, json } from "@sveltejs/kit";
 import { requireOrigin, requireUser } from "$lib/server/auth";
-import { ownedThread, updateThread } from "$lib/server/store";
+import { ownedThread, updateThread, transaction } from "$lib/server/store";
 import { activeRuns } from "$lib/server/runner";
-export const POST: import("./$types").RequestHandler = (event) => {
+export const POST: import("./$types").RequestHandler = async (event) => {
   requireOrigin(event);
+  let controller: AbortController | undefined;
   try {
-    ownedThread(event.params.id, requireUser(event).id);
+    await transaction(async () => {
+      const thread = await ownedThread(event.params.id, requireUser(event).id);
+      if (thread.status !== "running") return;
+      controller = activeRuns.get(thread.id);
+      await updateThread(thread.id, {
+        status: "cancelled",
+        pendingApproval: null,
+      });
+    });
   } catch {
     error(404, "Conversation not found");
   }
-  activeRuns.get(event.params.id)?.abort();
-  updateThread(event.params.id, { status: "cancelled", pendingApproval: null });
+  controller?.abort();
   return json({ ok: true });
 };

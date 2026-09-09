@@ -4,18 +4,18 @@ import { uploadRefs } from "$lib/server/uploads";
 import { json, error } from "@sveltejs/kit";
 import { requireUser } from "$lib/server/auth";
 import { recoverExpiredRun, items, events } from "$lib/server/store";
-export const GET: import("./$types").RequestHandler = (event) => {
+export const GET: import("./$types").RequestHandler = async (event) => {
   let t;
   try {
-    t = recoverExpiredRun(event.params.id, requireUser(event).id);
+    t = await recoverExpiredRun(event.params.id, requireUser(event).id);
   } catch {
     error(404, "Conversation not found");
   }
   return json({
     ...t,
-    uploads: uploadRefs(t.id),
-    events: events(t.id, t.runId),
-    documents: items(`documents:${t.id}`).map(({ filename }) => ({
+    uploads: await uploadRefs(t.id),
+    events: await events(t.id, t.runId),
+    documents: (await items(`documents:${t.id}`)).map(({ filename }) => ({
       filename,
       url: `/api/threads/${t.id}/documents/${filename}`,
     })),
@@ -26,7 +26,7 @@ export const PATCH: import("./$types").RequestHandler = async (event) => {
   requireOrigin(event);
   const owner = requireUser(event).id;
   try {
-    const t = editConversation(
+    const t = await editConversation(
       event.params.id,
       owner,
       await event.request.json(),

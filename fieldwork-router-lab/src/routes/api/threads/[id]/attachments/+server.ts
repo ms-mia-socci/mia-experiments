@@ -6,7 +6,7 @@ export const POST: import("./$types").RequestHandler = async (event) => {
   requireOrigin(event);
   const owner = requireUser(event).id;
   try {
-    const t = ownedThread(event.params.id, owner);
+    const t = await ownedThread(event.params.id, owner);
     if (t.status === "running" && t.deadline > Date.now())
       error(409, "Wait for the current run to finish.");
   } catch (e) {
@@ -45,12 +45,12 @@ export const POST: import("./$types").RequestHandler = async (event) => {
     error(400, (e as Error).message);
   }
 };
-export const GET: import("./$types").RequestHandler = (event) => {
+export const GET: import("./$types").RequestHandler = async (event) => {
   const owner = requireUser(event).id;
   try {
-    ownedThread(event.params.id, owner);
+    await ownedThread(event.params.id, owner);
   } catch {
     error(404, "Conversation not found");
   }
-  return json({ items: uploadRefs(event.params.id) });
+  return json({ items: await uploadRefs(event.params.id) });
 };

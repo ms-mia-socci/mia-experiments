@@ -1,3 +1,4 @@
+import { invokeRuntime } from "$lib/server/remote-runtime";
 import { uploaded } from "$lib/server/uploads";
 import { error } from "@sveltejs/kit";
 import { RunAgentInputSchema } from "@ag-ui/core";
@@ -32,7 +33,7 @@ export const POST: import("./$types").RequestHandler = async (event) => {
     error(409, "That framework is not available.");
   let current;
   try {
-    current = ownedThread(event.params.id, owner);
+    current = await ownedThread(event.params.id, owner);
   } catch {
     error(404, "Conversation not found");
   }
@@ -57,16 +58,21 @@ export const POST: import("./$types").RequestHandler = async (event) => {
     error(400, "Invalid attachments");
   let attachments;
   try {
-    attachments = [...new Set(ids)].map((id) => {
-      const { path, imagePath, text, ...ref } = uploaded(current.id, id);
-      return ref;
-    });
+    attachments = await Promise.all(
+      [...new Set(ids)].map(async (id) => {
+        const { path, imagePath, text, ...ref } = await uploaded(
+          current.id,
+          id,
+        );
+        return ref;
+      }),
+    );
   } catch {
     error(404, "Attachment not found");
   }
   let thread;
   try {
-    thread = beginRun(current.id, owner, text, handoff, attachments);
+    thread = await beginRun(current.id, owner, text, handoff, attachments);
   } catch (e) {
     error(
       409,
@@ -75,5 +81,7 @@ export const POST: import("./$types").RequestHandler = async (event) => {
         : "Conversation run limit reached.",
     );
   }
-  return streamRun(thread, !!handoff);
+  return process.env.FIELDWORK_RUNTIME_ARN
+    ? invokeRuntime(thread, !!handoff)
+    : streamRun(thread, !!handoff);
 };

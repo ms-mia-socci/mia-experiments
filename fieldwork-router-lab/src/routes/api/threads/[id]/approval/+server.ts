@@ -8,7 +8,7 @@ export const POST: import("./$types").RequestHandler = async (event) => {
   if (!["approved", "denied"].includes(decision))
     error(400, "Invalid decision");
   try {
-    decide(event.params.id, owner, id, decision);
+    await decide(event.params.id, owner, id, decision);
   } catch (e) {
     error(
       (e as Error).message === "NOT_FOUND" ? 404 : 409,

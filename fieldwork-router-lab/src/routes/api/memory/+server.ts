@@ -19,9 +19,9 @@ export const GET: import("./$types").RequestHandler = async (event) => {
       unavailable = true;
     }
   return json({
-    settings: memoryProfile(owner).settings,
+    settings: (await memoryProfile(owner)).settings,
     configured: memoryConfigured(),
-    status: memoryStatus(owner),
+    status: await memoryStatus(owner),
     records,
     unavailable,
   });
@@ -31,7 +31,8 @@ export const PATCH: import("./$types").RequestHandler = async (event) => {
   const owner = requireUser(event).id;
   try {
     return json({
-      settings: saveMemorySettings(owner, await event.request.json()).settings,
+      settings: (await saveMemorySettings(owner, await event.request.json()))
+        .settings,
     });
   } catch {
     error(400, "Invalid memory settings");

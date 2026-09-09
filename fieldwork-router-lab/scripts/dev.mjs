@@ -34,6 +34,7 @@ const env = {
   OPENAI_API_KEY: keys.OPENAI_API_KEY || "",
   OPENAI_API_ENDPOINT: keys.OPENAI_API_ENDPOINT || "",
   FIELDWORK_MEMORY_ID: memoryId,
+  FIELDWORK_AWS_PROFILE: process.env.FIELDWORK_AWS_PROFILE || "ai",
   FIELDWORK_AWS_CREDENTIALS_FILE: resolve(homedir(), ".aws/credentials"),
   FIELDWORK_AWS_CONFIG_FILE: resolve(homedir(), ".aws/config"),
   FIELDWORK_DB: resolve(local, "fieldwork.sqlite"),

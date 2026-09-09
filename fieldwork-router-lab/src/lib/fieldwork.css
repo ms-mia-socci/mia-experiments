@@ -810,6 +810,42 @@ i {
   font-size: 10px;
   color: #889778;
 }
+
+.trace-card {
+  display: grid;
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: #f3f5ed;
+}
+
+.trace-card > div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.trace-card small,
+.trace-card code {
+  color: var(--muted-foreground);
+}
+
+.trace-card code {
+  overflow: hidden;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-card a {
+  width: fit-content;
+  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 0.18rem;
+}
 .event-log > div {
   padding: 4px 0;
   border-bottom: 1px solid #e5e9df;

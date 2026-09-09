@@ -8,7 +8,7 @@ import {
   ListEventsCommand,
   DeleteEventCommand,
 } from "@aws-sdk/client-bedrock-agentcore";
-import { fromIni } from "@aws-sdk/credential-providers";
+import { awsConfig } from "./aws";
 import {
   defaultMemorySettings,
   memorySettingsSchema,
@@ -29,9 +29,9 @@ import type { Framework } from "../catalog";
 export function memoryConfigured() {
   return Boolean(process.env.FIELDWORK_MEMORY_ID);
 }
-export function memoryProfile(owner: string): MemoryProfile {
-  return transaction(() => {
-    let p = get<MemoryProfile>("memory-profiles", owner);
+export async function memoryProfile(owner: string): Promise<MemoryProfile> {
+  return await transaction(async () => {
+    let p = await get<MemoryProfile>("memory-profiles", owner);
     if (!p) {
       p = {
         settings: { ...defaultMemorySettings },
@@ -39,36 +39,34 @@ export function memoryProfile(owner: string): MemoryProfile {
         retired: [],
         version: 0,
       };
-      put("memory-profiles", owner, p);
+      await put("memory-profiles", owner, p);
     }
     return p;
   });
 }
-export function saveMemorySettings(owner: string, input: unknown) {
+export async function saveMemorySettings(owner: string, input: unknown) {
   const settings = memorySettingsSchema.parse(input);
-  const p = memoryProfile(owner);
+  const p = await memoryProfile(owner);
   const next = { ...p, settings, version: p.version + 1 };
-  put("memory-profiles", owner, next);
+  await put("memory-profiles", owner, next);
   return next;
 }
 let client: BedrockAgentCoreClient;
 function cloud() {
   return (client ??= new BedrockAgentCoreClient({
-    region: "us-east-1",
     maxAttempts: 2,
-    credentials: fromIni({
-      profile: "ai",
-      filepath: process.env.FIELDWORK_AWS_CREDENTIALS_FILE,
-      configFilepath: process.env.FIELDWORK_AWS_CONFIG_FILE,
-    }),
+    ...awsConfig(),
   }));
 }
 const opts = () => ({ abortSignal: AbortSignal.timeout(8000) });
-function status(owner: string, value: string) {
-  put("memory-status", owner, { message: value, at: new Date().toISOString() });
+async function status(owner: string, value: string) {
+  await put("memory-status", owner, {
+    message: value,
+    at: new Date().toISOString(),
+  });
 }
-export function memoryStatus(owner: string) {
-  return get("memory-status", owner) || null;
+export async function memoryStatus(owner: string) {
+  return (await get("memory-status", owner)) || null;
 }
 export type MemoryRun = {
   profile: MemoryProfile;
@@ -78,7 +76,7 @@ export type MemoryRun = {
   status: string;
 };
 export async function recallMemory(t: Thread): Promise<MemoryRun> {
-  const profile = memoryProfile(t.owner);
+  const profile = await memoryProfile(t.owner);
   const framework = t.phase === "routing" ? "strands" : t.framework!;
   const result: MemoryRun = {
     profile,
@@ -123,7 +121,7 @@ export async function recallMemory(t: Thread): Promise<MemoryRun> {
           });
     }
     // Never inject a response fetched under settings that have since changed.
-    if (memoryProfile(t.owner).version !== profile.version)
+    if ((await memoryProfile(t.owner)).version !== profile.version)
       return { ...result, recalled: [], status: "Memory settings changed" };
     result.recalled = result.recalled.slice(0, 6);
     if (result.recalled.length) {
@@ -151,7 +149,7 @@ export async function captureMemory(
   messages: Message[],
   run: MemoryRun,
 ) {
-  const p = memoryProfile(t.owner);
+  const p = await memoryProfile(t.owner);
   if (
     !memoryConfigured() ||
     !p.settings.enabled ||
@@ -162,7 +160,7 @@ export async function captureMemory(
   const actorId = memoryActor(t.owner, p.generation, run.framework),
     sessionId = t.id;
   // Keep a session inventory before the remote write so interrupted requests can be cleaned up.
-  put(`memory-sessions:${t.owner}`, `${actorId}:${sessionId}`, {
+  await put(`memory-sessions:${t.owner}`, `${actorId}:${sessionId}`, {
     actorId,
     sessionId,
     generation: p.generation,
@@ -188,21 +186,21 @@ export async function captureMemory(
       }),
       opts(),
     );
-    status(
+    await status(
       t.owner,
       p.settings.crossSession
         ? "Conversation saved; long-term extraction runs asynchronously"
         : "Conversation saved without long-term extraction",
     );
   } catch {
-    status(
+    await status(
       t.owner,
       "Could not save this turn to AWS Memory. Chat history is still saved locally.",
     );
   }
 }
 export async function inspectMemory(owner: string) {
-  const p = memoryProfile(owner);
+  const p = await memoryProfile(owner);
   const records: MemoryItem[] = [];
   if (!memoryConfigured()) return records;
   for (const framework of ["strands", "claude", "codex"] as const)
@@ -238,10 +236,10 @@ export async function inspectMemory(owner: string) {
   return records;
 }
 export async function resetMemory(owner: string) {
-  const p = memoryProfile(owner);
+  const p = await memoryProfile(owner);
   const retired = [...p.retired, p.generation];
   // Rotate immediately: in-flight extraction in an old namespace cannot re-enter recall.
-  put("memory-profiles", owner, {
+  await put("memory-profiles", owner, {
     ...p,
     generation: randomUUID(),
     retired,
@@ -251,13 +249,13 @@ export async function resetMemory(owner: string) {
     return { message: "Memory reset. No cloud memory is configured." };
   let failed = false;
   try {
-    for (const s of items<{
-      actorId: string;
-      sessionId: string;
-      generation: string;
-    }>(`memory-sessions:${owner}`).filter((s) =>
-      retired.includes(s.generation),
-    )) {
+    for (const s of (
+      await items<{
+        actorId: string;
+        sessionId: string;
+        generation: string;
+      }>(`memory-sessions:${owner}`)
+    ).filter((s) => retired.includes(s.generation))) {
       let nextToken: string | undefined;
       const ids: string[] = [];
       do {
@@ -327,6 +325,6 @@ export async function resetMemory(owner: string) {
   const message = failed
     ? "Recall reset immediately. Some AWS deletion failed; reset again to retry cleanup."
     : "Recall reset and existing AWS events and records deleted. In-flight extraction may finish in retired storage; it cannot be recalled. Reset again later to clean it up.";
-  status(owner, message);
+  await status(owner, message);
   return { message };
 }

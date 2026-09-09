@@ -1,9 +1,9 @@
+import { replayEvents, chatMessages } from "../agui";
 import { firstMessageTitle } from "../conversation-title";
 import type { AttachmentRef } from "../attachments";
-import { DatabaseSync } from "node:sqlite";
+import { query, transaction } from "./database";
+export { transaction } from "./database";
 import { randomUUID, randomBytes } from "node:crypto";
-import { mkdirSync, chmodSync } from "node:fs";
-import { dirname } from "node:path";
 import type { Framework } from "$lib/catalog";
 export type Message = {
   attachments?: AttachmentRef[];
@@ -37,6 +37,7 @@ export type Thread = {
   runCount: number;
 };
 export type Approval = {
+  kind?: "code" | "document";
   id: string;
   runId: string;
   filename: string;
@@ -45,60 +46,37 @@ export type Approval = {
   expiresAt: number;
   status: "pending" | "approved" | "denied";
 };
-let connection: DatabaseSync;
-function db() {
-  if (!connection) {
-    const path = process.env.FIELDWORK_DB;
-    if (!path) throw new Error("Start this project with npm run dev.");
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    connection = new DatabaseSync(path);
-    connection.exec(
-      "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS items (scope TEXT, key TEXT, data TEXT, PRIMARY KEY(scope,key)); CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, thread TEXT, run TEXT, data TEXT); CREATE INDEX IF NOT EXISTS events_thread_run_seq ON events(thread,run,seq);",
-    );
-    chmodSync(path, 0o600);
-  }
-  return connection;
-}
-export function get<T = any>(scope: string, key: string): T | undefined {
-  const row = db()
-    .prepare("SELECT data FROM items WHERE scope=? AND key=?")
-    .get(scope, key);
+export async function get<T = any>(
+  scope: string,
+  key: string,
+): Promise<T | undefined> {
+  const [row] = await query("SELECT data FROM items WHERE scope=? AND key=?", [
+    scope,
+    key,
+  ]);
   return row ? JSON.parse(String(row.data)) : undefined;
 }
-export function put(scope: string, key: string, value: unknown) {
-  db()
-    .prepare(
-      "INSERT INTO items VALUES (?,?,?) ON CONFLICT(scope,key) DO UPDATE SET data=excluded.data",
-    )
-    .run(scope, key, JSON.stringify(value));
+export async function put(scope: string, key: string, value: unknown) {
+  await query(
+    "INSERT INTO items VALUES (?,?,?) ON CONFLICT(scope,key) DO UPDATE SET data=excluded.data",
+    [scope, key, JSON.stringify(value)],
+  );
 }
-export function items<T = any>(scope: string): T[] {
-  return db()
-    .prepare("SELECT data FROM items WHERE scope=?")
-    .all(scope)
-    .map((r) => JSON.parse(String(r.data)));
+export async function items<T = any>(scope: string): Promise<T[]> {
+  return (await query("SELECT data FROM items WHERE scope=?", [scope])).map(
+    (r) => JSON.parse(String(r.data)),
+  );
 }
-export function transaction<T>(fn: () => T) {
-  db().exec("BEGIN IMMEDIATE");
-  try {
-    const value = fn();
-    db().exec("COMMIT");
-    return value;
-  } catch (error) {
-    db().exec("ROLLBACK");
-    throw error;
-  }
-}
-export function session(user: "mia" | "tim") {
+export async function session(user: "mia" | "tim") {
   const token = randomBytes(32).toString("base64url");
-  put("sessions", token, {
+  await put("sessions", token, {
     id: user,
     name: user === "mia" ? "Mia" : "Tim",
     expires: Date.now() + 86400000,
   });
   return token;
 }
-export function createThread(owner: string, framework: Framework | null) {
+export async function createThread(owner: string, framework: Framework | null) {
   const now = new Date().toISOString();
   const thread: Thread = {
     id: randomUUID(),
@@ -116,32 +94,32 @@ export function createThread(owner: string, framework: Framework | null) {
     pendingApproval: null,
     runCount: 0,
   };
-  put("threads", thread.id, thread);
+  await put("threads", thread.id, thread);
   return thread;
 }
-export function ownedThread(id: string, owner: string) {
-  const t = get<Thread>("threads", id);
+export async function ownedThread(id: string, owner: string) {
+  const t = await get<Thread>("threads", id);
   if (!t || t.owner !== owner) throw new Error("NOT_FOUND");
   return t;
 }
-export function updateThread(id: string, values: Partial<Thread>) {
-  return transaction(() => {
-    const t = get<Thread>("threads", id);
+export async function updateThread(id: string, values: Partial<Thread>) {
+  return await transaction(async () => {
+    const t = await get<Thread>("threads", id);
     if (!t) throw new Error("NOT_FOUND");
     const next = { ...t, ...values, updatedAt: new Date().toISOString() };
-    put("threads", id, next);
+    await put("threads", id, next);
     return next;
   });
 }
-export function beginRun(
+export async function beginRun(
   id: string,
   owner: string,
   text: string,
   handoff?: Framework,
   attachments: AttachmentRef[] = [],
 ) {
-  return transaction(() => {
-    const t = ownedThread(id, owner);
+  return await transaction(async () => {
+    const t = await ownedThread(id, owner);
     if (t.status === "running" && t.deadline > Date.now())
       throw new Error("BUSY");
     if (t.runCount >= 40) throw new Error("LIMIT");
@@ -171,29 +149,33 @@ export function beginRun(
         },
       ].slice(-40),
     };
-    put("threads", id, next);
+    await put("threads", id, next);
     return next;
   });
 }
-export function appendEvent(thread: string, run: string, data: unknown) {
-  db()
-    .prepare("INSERT INTO events(thread,run,data) VALUES (?,?,?)")
-    .run(thread, run, JSON.stringify(data));
+export async function appendEvent(thread: string, run: string, data: unknown) {
+  await query("INSERT INTO events(thread,run,data) VALUES (?,?,?)", [
+    thread,
+    run,
+    JSON.stringify(data),
+  ]);
 }
-export function events(thread: string, run: string | null) {
-  return db()
-    .prepare("SELECT data FROM events WHERE thread=? AND run=? ORDER BY seq")
-    .all(thread, run || "")
-    .map((r) => JSON.parse(String(r.data)));
+export async function events(thread: string, run: string | null) {
+  return (
+    await query(
+      "SELECT data FROM events WHERE thread=? AND run=? ORDER BY seq",
+      [thread, run || ""],
+    )
+  ).map((r) => JSON.parse(String(r.data)));
 }
-export function decide(
+export async function decide(
   id: string,
   owner: string,
   approvalId: string,
   decision: "approved" | "denied",
 ) {
-  transaction(() => {
-    const t = ownedThread(id, owner),
+  await transaction(async () => {
+    const t = await ownedThread(id, owner),
       a = t.pendingApproval;
     if (
       !a ||
@@ -204,39 +186,38 @@ export function decide(
       t.status !== "running"
     )
       throw new Error("EXPIRED");
-    put("threads", id, { ...t, pendingApproval: { ...a, status: decision } });
+    await put("threads", id, {
+      ...t,
+      pendingApproval: { ...a, status: decision },
+    });
   });
 }
 
 // A process restart loses in-memory controllers; expired leases must not leave
 // the browser polling a permanently running conversation.
-export function recoverExpiredRun(id: string, owner: string) {
-  return transaction(() => {
-    const t = ownedThread(id, owner);
-    if (t.status !== "running" || t.deadline > Date.now()) return t;
-    const partial = new Map<string, Message>();
-    const savedIds = new Set(t.messages.map((m) => m.id));
-    for (const event of events(t.id, t.runId)) {
-      if (event.type === "TEXT_MESSAGE_START" && !savedIds.has(event.messageId))
-        partial.set(event.messageId, {
-          id: event.messageId,
-          role: "assistant",
-          agent: t.phase === "routing" ? "coordinator" : t.framework!,
-          content: "",
-        });
-      if (event.type === "TEXT_MESSAGE_CONTENT") {
-        const message = partial.get(event.messageId);
-        if (message) message.content += event.delta;
-      }
-    }
+export async function recoverExpiredRun(id: string, owner: string) {
+  const t = await ownedThread(id, owner);
+  if (t.status !== "running" || t.deadline > Date.now()) return t;
+  const restored = await replayEvents(await events(t.id, t.runId), t.messages);
+  return await transaction(async () => {
+    const current = await ownedThread(id, owner);
+    if (
+      current.runId !== t.runId ||
+      current.status !== "running" ||
+      current.deadline > Date.now()
+    )
+      return current;
     const recovered: Thread = {
-      ...t,
+      ...current,
       status: "error",
-      messages: [...t.messages, ...partial.values()],
+      messages: chatMessages(
+        restored.messages,
+        t.phase === "routing" ? "coordinator" : t.framework!,
+      ),
       pendingApproval: null,
       updatedAt: new Date().toISOString(),
     };
-    put("threads", id, recovered);
+    await put("threads", id, recovered);
     return recovered;
   });
 }

@@ -17,10 +17,14 @@ export const conversationPatch = z
   .strict()
   .refine((v) => Object.keys(v).length > 0);
 
-export function editConversation(id: string, owner: string, input: unknown) {
+export async function editConversation(
+  id: string,
+  owner: string,
+  input: unknown,
+) {
   const patch = conversationPatch.parse(input);
-  return transaction(() => {
-    const t = ownedThread(id, owner);
+  return await transaction(async () => {
+    const t = await ownedThread(id, owner);
     if (patch.archived && t.status === "running" && t.deadline > Date.now())
       throw Error("BUSY");
     const next = {
@@ -28,18 +32,18 @@ export function editConversation(id: string, owner: string, input: unknown) {
       ...patch,
       ...(patch.title ? { titleSource: "manual" as const } : {}),
     };
-    put("threads", id, next);
+    await put("threads", id, next);
     return next;
   });
 }
-export function recommendConversation(
+export async function recommendConversation(
   id: string,
   runId: string,
   recommendation: Recommendation,
   title?: string,
 ) {
-  return transaction(() => {
-    const t = get<Thread>("threads", id);
+  return await transaction(async () => {
+    const t = await get<Thread>("threads", id);
     if (!t || t.runId !== runId || t.status !== "running")
       throw Error("Run stopped");
     const next = {
@@ -49,13 +53,17 @@ export function recommendConversation(
         ? { title, titleSource: "agent" as const }
         : {}),
     };
-    put("threads", id, next);
+    await put("threads", id, next);
     return next;
   });
 }
-export function listConversations(owner: string, query = "", archived = false) {
+export async function listConversations(
+  owner: string,
+  query = "",
+  archived = false,
+) {
   const q = query.toLocaleLowerCase().trim();
-  return items<Thread>("threads")
+  return (await items<Thread>("threads"))
     .filter(
       (t) =>
         t.owner === owner &&

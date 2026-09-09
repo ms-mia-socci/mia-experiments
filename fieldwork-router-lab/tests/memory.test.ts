@@ -57,8 +57,8 @@ const all = {
   crossSession: true,
   shareAcrossAgents: true,
 };
-test("memory is opt-in; framework and user namespaces never overlap", () => {
-  const p = memoryProfile("mia");
+test("memory is opt-in; framework and user namespaces never overlap", async () => {
+  const p = await memoryProfile("mia");
   assert.equal(p.settings.enabled, false);
   assert.deepEqual(memoryScopes("mia", p, "claude"), []);
   const scoped = { ...p, settings: { ...all, shareAcrossAgents: false } };
@@ -72,11 +72,13 @@ test("memory is opt-in; framework and user namespaces never overlap", () => {
     memoryActor("mia", p.generation, "claude"),
     memoryActor("tim", p.generation, "claude"),
   );
-  assert.throws(() => saveMemorySettings("mia", { ...all, owner: "tim" }));
+  await assert.rejects(
+    async () => await saveMemorySettings("mia", { ...all, owner: "tim" }),
+  );
 });
 test("all frameworks use shared retrieval policy, failures remain nonfatal, and capture honors changes", async () => {
-  const t = beginRun(
-    createThread("mia", "claude").id,
+  const t = await beginRun(
+    (await createThread("mia", "claude")).id,
     "mia",
     "Prefer short answers",
   );
@@ -84,7 +86,7 @@ test("all frameworks use shared retrieval policy, failures remain nonfatal, and 
   let run = await recallMemory(t);
   await captureMemory(t, [], run);
   assert.equal(calls.length, 0);
-  saveMemorySettings("mia", all);
+  await saveMemorySettings("mia", all);
   run = await recallMemory(t);
   assert.equal(run.recalled.length, 6);
   assert.match(run.context, /untrusted historical data/);
@@ -96,16 +98,16 @@ test("all frameworks use shared retrieval policy, failures remain nonfatal, and 
     memoryActor("mia", run.profile.generation, "claude"),
   );
   assert.equal(write.input.extractionMode, undefined);
-  saveMemorySettings("mia", { ...all, enabled: false });
+  await saveMemorySettings("mia", { ...all, enabled: false });
   calls.length = 0;
   await captureMemory(t, [], run);
   assert.equal(calls.length, 0);
-  saveMemorySettings("mia", { ...all, crossSession: false });
+  await saveMemorySettings("mia", { ...all, crossSession: false });
   run = await recallMemory(t);
   assert.equal(run.recalled.length, 0);
   await captureMemory(t, [], run);
   assert.equal(calls.at(-1)?.input.extractionMode, "SKIP");
-  saveMemorySettings("mia", all);
+  await saveMemorySettings("mia", all);
   fail = true;
   run = await recallMemory(t);
   assert.equal(run.context, "");
@@ -113,13 +115,17 @@ test("all frameworks use shared retrieval policy, failures remain nonfatal, and 
   fail = false;
 });
 test("reset rotates recall scope and cleans only the requesting user; disabled kinds are excluded", async () => {
-  saveMemorySettings("mia", {
+  await saveMemorySettings("mia", {
     ...all,
     usePreferences: false,
     shareAcrossAgents: false,
   });
-  const before = memoryProfile("mia");
-  const t = beginRun(createThread("mia", "codex").id, "mia", "Project context");
+  const before = await memoryProfile("mia");
+  const t = await beginRun(
+    (await createThread("mia", "codex")).id,
+    "mia",
+    "Project context",
+  );
   let run = await recallMemory(t);
   assert.equal(run.recalled.length, 1);
   assert.equal(run.recalled[0].kind, "summaries");
@@ -130,7 +136,7 @@ test("reset rotates recall scope and cleans only the requesting user; disabled k
   assert.ok(calls.every((c) => c.input.namespace.includes("fw_mia_")));
   calls.length = 0;
   await resetMemory("mia");
-  const after = memoryProfile("mia");
+  const after = await memoryProfile("mia");
   assert.notEqual(after.generation, before.generation);
   assert.equal(after.settings.usePreferences, false);
   assert.ok(
@@ -143,5 +149,5 @@ test("reset rotates recall scope and cleans only the requesting user; disabled k
       (s) => !s.namespace.includes(before.generation),
     ),
   );
-  assert.equal(memoryProfile("tim").settings.enabled, false);
+  assert.equal((await memoryProfile("tim")).settings.enabled, false);
 });

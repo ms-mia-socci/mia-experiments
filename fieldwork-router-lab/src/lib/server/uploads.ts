@@ -1,3 +1,4 @@
+import { readBlob, writeBlob, removeBlob, localBlob } from "./blobs";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { join, extname } from "node:path";
@@ -21,23 +22,25 @@ type Upload = AttachmentRef & {
   imagePath?: string;
   path: string;
 };
-export function uploaded(thread: string, id: string) {
+export async function uploaded(thread: string, id: string) {
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error("Attachment not found");
-  const f = get<Upload>(`uploads:${thread}`, id);
+  const f = await get<Upload>(`uploads:${thread}`, id);
   if (!f) throw new Error("Attachment not found");
   return f;
 }
-export function uploadRefs(thread: string) {
-  return items<Upload>(`uploads:${thread}`).map(
+export async function uploadRefs(thread: string) {
+  return (await items<Upload>(`uploads:${thread}`)).map(
     ({ text, path, imagePath, ...ref }) => ref,
   );
 }
 export function attached(thread: Thread) {
-  return [
-    ...new Set(
-      thread.messages.flatMap((m) => (m.attachments || []).map((a) => a.id)),
-    ),
-  ].map((id) => uploaded(thread.id, id));
+  return Promise.all(
+    [
+      ...new Set(
+        thread.messages.flatMap((m) => (m.attachments || []).map((a) => a.id)),
+      ),
+    ].map(async (id) => await uploaded(thread.id, id)),
+  );
 }
 export async function prepareUpload(file: File) {
   if (file.size <= 0 || file.size > MAX_UPLOAD_BYTES)
@@ -146,11 +149,11 @@ export async function saveUploads(
         text: f.text,
         url: `/api/threads/${thread}/attachments/${id}`,
       });
-      await writeFile(path, f.bytes, { mode: 0o600 });
-      if (imagePath) await writeFile(imagePath, f.image!, { mode: 0o600 });
+      await writeBlob(path, f.bytes);
+      if (imagePath) await writeBlob(imagePath, f.image!);
     }
-    transaction(() => {
-      const existing = items<Upload>(`uploads:${thread}`);
+    await transaction(async () => {
+      const existing = await items<Upload>(`uploads:${thread}`);
       if (existing.length + saved.length > 20)
         throw new Error("This conversation has reached its 20-file limit.");
       if (
@@ -158,37 +161,38 @@ export async function saveUploads(
         150000
       )
         throw new Error("Conversation file text exceeds 150,000 characters.");
-      for (const f of saved) put(`uploads:${thread}`, f.id, f);
+      for (const f of saved) await put(`uploads:${thread}`, f.id, f);
     });
   } catch (e) {
     for (const f of saved) {
-      await rm(f.path, { force: true });
-      if (f.imagePath) await rm(f.imagePath, { force: true });
+      await removeBlob(f.path);
+      if (f.imagePath) await removeBlob(f.imagePath);
     }
     throw e;
   }
   return saved.map(({ text, path, imagePath, ...ref }) => ref);
 }
-export function fileText(thread: Thread, m: Message) {
-  const files = (m.attachments || []).map((a) => uploaded(thread.id, a.id));
+export async function fileText(thread: Thread, m: Message) {
+  const files = await Promise.all(
+    (m.attachments || []).map(async (a) => await uploaded(thread.id, a.id)),
+  );
   return (
     m.content +
     files
       .map(
         (f) =>
-          `\n\nAttached file: ${f.filename}\n${f.text ? JSON.stringify({ untrustedFileContent: f.text }) : "[Image supplied separately]"}`,
+          `\n\nAttached file: ${f.filename} (attachmentId: ${f.id})\n${f.text ? JSON.stringify({ untrustedFileContent: f.text }) : "[Image supplied separately]"}`,
       )
       .join("")
   );
 }
 export async function imageInputs(thread: Thread) {
   return Promise.all(
-    attached(thread)
+    (await attached(thread))
       .filter((f) => f.imagePath)
       .map(async (f) => ({
         filename: f.filename,
-        path: f.imagePath!,
-        bytes: await readFile(f.imagePath!),
+        ...(await localBlob(f.imagePath!)),
       })),
   );
 }
