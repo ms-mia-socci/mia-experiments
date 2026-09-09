@@ -1,20 +1,16 @@
+import { listConversations } from "$lib/server/conversations";
 import { json, error } from "@sveltejs/kit";
 import { requireUser, requireOrigin, available } from "$lib/server/auth";
-import { createThread, items, type Thread } from "$lib/server/store";
+import { createThread } from "$lib/server/store";
 import { isFramework } from "$lib/catalog";
 export const GET: import("./$types").RequestHandler = (event) => {
   const owner = requireUser(event).id;
   return json(
-    items<Thread>("threads")
-      .filter((t) => t.owner === owner)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .map(({ id, title, framework, phase, updatedAt }) => ({
-        id,
-        title,
-        framework,
-        phase,
-        updatedAt,
-      })),
+    listConversations(
+      owner,
+      event.url.searchParams.get("q")?.slice(0, 200) || "",
+      event.url.searchParams.get("archived") === "1",
+    ),
   );
 };
 export const POST: import("./$types").RequestHandler = async (event) => {

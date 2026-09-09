@@ -15,7 +15,7 @@ npm run dev
 
 Open **http://127.0.0.1:5373**. Choose Mia or Tim, then either choose a framework or describe a task. Strands asks for clarification when needed, recommends an available framework, and prepares a brief. Accepting a recommendation transfers the saved context into the chosen agent in the same conversation. You can choose a different available framework before handoff.
 
-This is a local experiment with real model calls. Demo identities are not authentication suitable for deployment. Nothing in this project deploys to AWS or establishes a BAA-covered configuration. Strands currently uses Anthropic's API model provider, not Bedrock.
+This is a local experiment with real model calls. Demo identities are not authentication suitable for deployment. The agents run locally; optional AgentCore Memory is provisioned separately in AWS. This does not establish a BAA-covered configuration. Strands currently uses Anthropic's API model provider, not Bedrock.
 
 ## What actually runs
 
@@ -108,3 +108,36 @@ Supported: PNG/JPEG/WebP images, UTF-8 TXT/Markdown/CSV/JSON/log files, and text
 Originals live under `.local/workspaces/<thread>/uploads/`, with metadata in SQLite. Owner checks protect uploads and downloads; file contents are validated and treated as untrusted input. All three adapters receive extracted text and native image inputs; images are normalized and resized before model use. This adds image attachments, not image generation.
 
 `npm test` covers upload validation. With the dev server running, `node tests/uploads-live.mjs` checks text, PDF, and image understanding through all three real agents and owner isolation; `node tests/uploads-browser.mjs` checks composer previews/removal, upload, routing handoff, file links, and reload. Both live tests incur model usage.
+
+## Profile and AgentCore Memory
+
+Open **Profile & memory** from your avatar, or visit `/settings`. Memory is opt-in for each demo identity. The controls govern cloud event storage, recall across conversations, sharing across frameworks, and preference/summary retrieval. Settings persist in SQLite. Disabling memory stops agent-triggered memory reads/writes; explicit inspection/reset actions remain available. Changes affect future requests, not context already sent to an in-flight agent. Explicit handoffs still carry the current conversation history.
+
+All adapters use one shared backend memory service. Actor IDs include the authenticated owner, reset generation, and framework; server-selected namespaces prevent cross-user recall. Sharing broadens retrieval across that user's three framework namespaces. With cross-conversation recall off, events use `extractionMode: SKIP`; with it on, AWS extracts preferences and session summaries asynchronously. Type toggles filter retrieval, not extraction. No historical chats are backfilled. Only new conversation text is sent, capped at 12,000 characters per message and 20 messages per completed run; uploaded bytes and raw tool outputs are not directly copied, though responses can discuss them.
+
+The **Memory** inspector tab shows context retrieved for the current run. Retrieval is capped and injected as untrusted optional context. AWS failures leave local chat working and are surfaced as memory status. SQLite remains the source of visible chat history, approvals, and artifact metadata; this version does not restore chats from AWS short-term events. Raw AWS events expire after 7 days; extracted records persist until deleted.
+
+Reset rotates the user's namespace generation immediately and deletes known AWS events and records from retired generations. A concurrent extraction can create a late record in retired storage; it cannot be recalled. The UI reports this limitation, and repeating reset retries cleanup of retired generations. This is not a guarantee of immediate physical erasure across AWS asynchronous processing.
+
+### Provisioning
+
+Terraform lives in `infra/memory/` with independent, ignored local state. It provisions only a Memory resource and two built-in strategies in `us-east-1`, using profile `ai`; it does not change either sibling stack.
+
+```sh
+node scripts/deploy-memory.mjs
+npm run dev
+```
+
+The deployment script plans and applies the resource, writes the non-secret Memory ID to `.local/memory.json`, and asks you to restart. `FIELDWORK_MEMORY_ID` can also supply the ID. The launcher passes the original AWS configuration paths to the server's explicit `ai` credential provider while keeping the isolated HOME and empty default AWS config for agent processes. Credentials are never sent to the browser or included in model context.
+
+**Current blocker (2026-09-09):** listing Memory resources succeeded, but AWS rejected Terraform's `CreateMemory` with `AccessDeniedException: Access Denied during CreateMemory: Unable to perform operation. Contact customer support for assistance.` No Memory resource was created. The profile/settings UI and SDK integration are implemented, but real AWS write, extraction, retrieval, and deletion remain unverified until provisioning succeeds. No local mock is used as a cloud-memory fallback.
+
+`npm test` includes mocked AWS boundary tests for opt-in, namespaces, framework/kind filtering, settings changes during runs, failures, and reset. `node tests/memory-settings-browser.mjs` checks the settings UI and recalled-memory panel without model calls and restores the user's original settings.
+
+## Conversation management
+
+The expanded sidebar searches titles and saved message text within the current person's conversations. Pinned threads appear first; **Archived** has its own searchable view and a Restore action. Each thread's options provide Rename, Pin/Unpin, and Archive/Restore. Archiving is reversible and does not delete messages or files; a running conversation must be stopped before it can be archived.
+
+New threads use a whitespace-normalized first-message title. During conversational routing, Strands is prompted to supply a concise task title with its recommendation; the server applies that title only for the current run and never overwrites a manual rename. Direct-agent chats use the first-message fallback without an extra model call. Older threads remain compatible with the optional metadata fields.
+
+`npm test` covers owner isolation, message search, pin/archive ordering, title validation, and manual-title precedence. `node tests/conversations-browser.mjs` exercises the real local API and UI without model calls; it leaves its synthetic thread archived.

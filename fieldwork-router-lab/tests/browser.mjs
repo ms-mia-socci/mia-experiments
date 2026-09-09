@@ -62,7 +62,7 @@ console.log(
 );
 await page.reload();
 await page.waitForTimeout(2000);
-console.log("reload", await page.locator(".chat-heading h2").innerText());
+console.log("reload", await page.locator(".chat-panel").getAttribute("aria-label"));
 await page.setViewportSize({ width: 390, height: 844 });
 await page.getByRole("button", { name: "Toggle behind the work" }).click();
 await page.screenshot({ path: ".local/mobile.png", fullPage: true });

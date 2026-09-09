@@ -1,3 +1,4 @@
+import { firstMessageTitle } from "../conversation-title";
 import type { AttachmentRef } from "../attachments";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID, randomBytes } from "node:crypto";
@@ -20,6 +21,9 @@ export type Thread = {
   id: string;
   owner: string;
   title: string;
+  titleSource?: "manual" | "agent" | "first-message";
+  pinned?: boolean;
+  archived?: boolean;
   createdAt: string;
   updatedAt: string;
   phase: "routing" | "active";
@@ -49,7 +53,7 @@ function db() {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     connection = new DatabaseSync(path);
     connection.exec(
-      "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS items (scope TEXT, key TEXT, data TEXT, PRIMARY KEY(scope,key)); CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, thread TEXT, run TEXT, data TEXT);",
+      "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS items (scope TEXT, key TEXT, data TEXT, PRIMARY KEY(scope,key)); CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, thread TEXT, run TEXT, data TEXT); CREATE INDEX IF NOT EXISTS events_thread_run_seq ON events(thread,run,seq);",
     );
     chmodSync(path, 0o600);
   }
@@ -151,7 +155,10 @@ export function beginRun(
       deadline: Date.now() + 240000,
       pendingApproval: null,
       runCount: t.runCount + 1,
-      title: t.messages.length ? t.title : text.slice(0, 70),
+      title:
+        t.messages.length || t.titleSource === "manual"
+          ? t.title
+          : firstMessageTitle(text),
       updatedAt: new Date().toISOString(),
       messages: [
         ...t.messages,
@@ -198,5 +205,38 @@ export function decide(
     )
       throw new Error("EXPIRED");
     put("threads", id, { ...t, pendingApproval: { ...a, status: decision } });
+  });
+}
+
+// A process restart loses in-memory controllers; expired leases must not leave
+// the browser polling a permanently running conversation.
+export function recoverExpiredRun(id: string, owner: string) {
+  return transaction(() => {
+    const t = ownedThread(id, owner);
+    if (t.status !== "running" || t.deadline > Date.now()) return t;
+    const partial = new Map<string, Message>();
+    const savedIds = new Set(t.messages.map((m) => m.id));
+    for (const event of events(t.id, t.runId)) {
+      if (event.type === "TEXT_MESSAGE_START" && !savedIds.has(event.messageId))
+        partial.set(event.messageId, {
+          id: event.messageId,
+          role: "assistant",
+          agent: t.phase === "routing" ? "coordinator" : t.framework!,
+          content: "",
+        });
+      if (event.type === "TEXT_MESSAGE_CONTENT") {
+        const message = partial.get(event.messageId);
+        if (message) message.content += event.delta;
+      }
+    }
+    const recovered: Thread = {
+      ...t,
+      status: "error",
+      messages: [...t.messages, ...partial.values()],
+      pendingApproval: null,
+      updatedAt: new Date().toISOString(),
+    };
+    put("threads", id, recovered);
+    return recovered;
   });
 }

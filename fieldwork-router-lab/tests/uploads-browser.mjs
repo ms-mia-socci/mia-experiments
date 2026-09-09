@@ -47,7 +47,7 @@ try {
   await p.waitForFunction(
     () =>
       document.querySelector(".run-status")?.textContent === "Ready" &&
-      document.querySelector(".chat-heading h2")?.textContent ===
+      document.querySelector(".chat-panel")?.getAttribute("aria-label") ===
         "Claude Agent SDK",
     {},
     { timeout: 90000 },

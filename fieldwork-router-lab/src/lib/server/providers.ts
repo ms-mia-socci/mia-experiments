@@ -1,3 +1,4 @@
+import { recommendConversation } from "./conversations";
 import { fileText, imageInputs } from "./uploads";
 import {
   emptyTotals,
@@ -21,7 +22,7 @@ import { z } from "zod";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { available } from "./auth";
-import { updateThread, type Thread } from "./store";
+import { type Thread } from "./store";
 import {
   recommendationSchema,
   validateRecommendation,
@@ -30,6 +31,7 @@ import {
 import { saveDocument, documentSchema } from "./documents";
 export type RunContext = {
   thread: Thread;
+  memoryContext?: string;
   controller: AbortController;
   emit: (event: Record<string, any>) => void;
   text: (text: string) => void;
@@ -60,7 +62,7 @@ export async function runStrands(ctx: RunContext, coordinator: boolean) {
       ctx.call("recommend_framework", input, async () => {
         if (++calls > 1) throw new Error("One recommendation per turn.");
         const r = validateRecommendation(input, available());
-        updateThread(ctx.thread.id, { recommendation: r });
+        recommendConversation(ctx.thread.id, ctx.thread.runId!, r, r.title);
         ctx.emit({ type: "CUSTOM", name: "route_recommended", value: r });
         return { recommended: true, ...r };
       }),
@@ -77,8 +79,9 @@ export async function runStrands(ctx: RunContext, coordinator: boolean) {
     model,
     printer: false,
     systemPrompt: coordinator
-      ? routingPrompt(available())
+      ? routingPrompt(available()) + (ctx.memoryContext || "")
       : assistantRules +
+        (ctx.memoryContext || "") +
         " You run on AWS Strands locally. You have no web search tool; do not imply live research.",
     tools: coordinator ? [recommendation] : [document],
     toolExecutor: "sequential",
@@ -90,13 +93,11 @@ export async function runStrands(ctx: RunContext, coordinator: boolean) {
   const inputHistory: any[] = history(ctx.thread);
   const images = await imageInputs(ctx.thread);
   if (images.length)
-    inputHistory
-      .at(-1)
-      .content.push(
-        ...images.map((f) => ({
-          image: { format: "png", source: { bytes: new Uint8Array(f.bytes) } },
-        })),
-      );
+    inputHistory.at(-1).content.push(
+      ...images.map((f) => ({
+        image: { format: "png", source: { bytes: new Uint8Array(f.bytes) } },
+      })),
+    );
   for await (const event of agent.stream(inputHistory, {
     cancelSignal: ctx.controller.signal,
   })) {
@@ -213,6 +214,7 @@ export async function runClaude(ctx: RunContext) {
       mcpServers: { fieldwork: server },
       systemPrompt:
         assistantRules +
+        (ctx.memoryContext || "") +
         " The prompt contains conversation history as JSON. Respond to the latest request. You run on Claude Agent SDK locally.",
       settingSources: [],
       permissionMode: "default",
@@ -373,6 +375,7 @@ export async function runCodex(ctx: RunContext) {
       {
         type: "text",
         text:
+          (ctx.memoryContext || "") +
           "You are a read-only engineering assistant. Answer the latest user request in this conversation. Do not modify files. Conversation:\n" +
           JSON.stringify(
             ctx.thread.messages.map((m) => ({

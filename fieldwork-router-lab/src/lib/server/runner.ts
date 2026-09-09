@@ -1,3 +1,4 @@
+import { recallMemory, captureMemory, type MemoryRun } from "./memory";
 import { randomUUID } from "node:crypto";
 import { EventEncoder } from "@ag-ui/encoder";
 import type { BaseEvent } from "@ag-ui/core";
@@ -113,7 +114,16 @@ export function streamRun(thread: Thread, handoff = false) {
               brief: thread.messages.at(-1)?.content,
             },
           });
+        let memory: MemoryRun | undefined;
         try {
+          memory = await recallMemory(thread);
+          ctx.memoryContext = memory.context;
+          emit({
+            type: "CUSTOM",
+            name: "memory_recalled",
+            value: { status: memory.status, items: memory.recalled },
+          });
+          controller.signal.throwIfAborted();
           if (thread.phase === "routing") await runStrands(ctx, true);
           else if (thread.framework === "claude") await runClaude(ctx);
           else if (thread.framework === "codex") await runCodex(ctx);
@@ -138,7 +148,8 @@ export function streamRun(thread: Thread, handoff = false) {
           endText();
           clearTimeout(timeout);
           clearInterval(heartbeat);
-          activeRuns.delete(thread.id);
+          if (activeRuns.get(thread.id) === controller)
+            activeRuns.delete(thread.id);
           const latest = get<Thread>("threads", thread.id);
           if (latest?.runId === thread.runId)
             updateThread(thread.id, {
@@ -146,6 +157,8 @@ export function streamRun(thread: Thread, handoff = false) {
               messages: [...thread.messages, ...messages].slice(-40),
               pendingApproval: null,
             });
+          if (status === "complete" && memory)
+            await captureMemory(thread, messages, memory);
           if (status === "complete")
             emit({
               type: "RUN_FINISHED",

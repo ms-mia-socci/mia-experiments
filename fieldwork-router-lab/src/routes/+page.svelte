@@ -5,6 +5,8 @@
 </script>
 
 <script lang="ts">
+  import ConversationTitle from "$lib/components/ConversationTitle.svelte";
+  import ConversationRow from "$lib/components/ConversationRow.svelte";
   import AttachFiles from "$lib/components/AttachFiles.svelte";
   import {
     MAX_UPLOAD_BYTES,
@@ -54,6 +56,8 @@
     title: string;
     framework: Framework | null;
     phase: string;
+    pinned?: boolean;
+    archived?: boolean;
   };
   let threads = $state<Entry[]>([]),
     current = $state<Thread | null>(null),
@@ -90,12 +94,55 @@
     if (!r.ok) throw new Error(value.message || "Request failed");
     return value;
   }
+  let historyQuery = $state("");
+  let showArchived = $state(false);
+  let historyRequest = 0;
   async function loadThreads() {
-    threads = await api("/api/threads");
+    const request = ++historyRequest;
+    const params = new URLSearchParams({
+      q: historyQuery,
+      archived: showArchived ? "1" : "0",
+    });
+    const result = await api(
+      historyQuery || showArchived ? `/api/threads?${params}` : "/api/threads",
+    );
+    if (request === historyRequest) threads = result;
   }
+  async function filterHistory() {
+    try {
+      await loadThreads();
+    } catch {
+      notice = "Could not load conversation history.";
+    }
+  }
+  async function editThread(
+    id: string,
+    patch: { title?: string; pinned?: boolean; archived?: boolean },
+  ) {
+    try {
+      await api(`/api/threads/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (current?.id === id) {
+        if (patch.archived) home();
+        else await refresh();
+      }
+      await loadThreads();
+    } catch (e) {
+      notice = (e as Error).message;
+      throw e;
+    }
+  }
+
+  let refreshVersion = 0;
   async function refresh() {
     if (!current) return;
-    const value = await api(`/api/threads/${current.id}`);
+    const id = current.id;
+    const version = ++refreshVersion;
+    const value = await api(`/api/threads/${id}`);
+    if (current?.id !== id || version !== refreshVersion) return;
     current = value;
     recommendation = current!.recommendation;
     approval =
@@ -163,6 +210,13 @@
   function home() {
     if (busy) return;
     current = null;
+    refreshVersion++;
+    messages = [];
+    events = [];
+    documents = [];
+    uploads = [];
+    recommendation = null;
+    approval = null;
     draftFiles = [];
     notice = "";
     prompt = "";
@@ -449,14 +503,12 @@
           aria-expanded="false"
           onclick={() => setSidebarCollapsed(false)}
         ></button>
-        <form class="rail-profile" action="/auth/logout" method="POST">
-          <button
-            class="avatar"
-            aria-label={`Switch person (${data.user.name})`}
-            title={`Switch person (${data.user.name})`}
-            >{data.user.name[0]}</button
-          >
-        </form>
+        <a
+          class="rail-profile avatar"
+          href="/settings"
+          aria-label={`Profile and memory settings (${data.user.name})`}
+          title="Profile and memory settings">{data.user.name[0]}</a
+        >
       {:else}
         <div class="sidebar-heading">
           <button class="brand" onclick={home} disabled={busy}
@@ -482,34 +534,56 @@
           ><Plus size={17} /><span>New conversation</span></Button
         >
         <p class="eyebrow history-label">YOUR CONVERSATIONS</p>
-        <nav>
-          {#each threads as t}<button
-              class:selected={current?.id === t.id}
-              class="thread-link"
-              onclick={() => select(t.id)}
-              disabled={busy}
-              ><span class="thread-dot"
-                >{t.framework === "claude"
-                  ? "✳"
-                  : t.framework === "codex"
-                    ? "›"
-                    : "○"}</span
-              ><span
-                ><strong>{t.title}</strong><small
-                  >{t.phase === "routing"
-                    ? "Finding a fit"
-                    : frameworkName(t.framework!)}</small
-                ></span
-              ></button
-            >{/each}{#if !threads.length}<p class="empty-history">
-              A fresh page.<br />Your next idea starts here.
+        <input
+          class="history-search"
+          type="search"
+          aria-label="Search conversations"
+          placeholder="Search conversations…"
+          bind:value={historyQuery}
+          maxlength="200"
+          oninput={() => void filterHistory()}
+        />
+        <div class="history-filters">
+          <button
+            class:active={!showArchived}
+            onclick={() => {
+              showArchived = false;
+              void filterHistory();
+            }}>Recent</button
+          ><button
+            class:active={showArchived}
+            onclick={() => {
+              showArchived = true;
+              void filterHistory();
+            }}>Archived</button
+          >
+        </div>
+        <nav aria-label="Conversation history">
+          {#each threads as t (t.id)}<ConversationRow
+              thread={t}
+              selected={current?.id === t.id}
+              {busy}
+              onselect={() => select(t.id)}
+              onedit={(patch) => editThread(t.id, patch)}
+            />{/each}
+          {#if !threads.length}<p class="empty-history">
+              {historyQuery
+                ? "No matching conversations."
+                : showArchived
+                  ? "No archived conversations."
+                  : "A fresh page. Your next idea starts here."}
             </p>{/if}
         </nav>
         <div class="sidebar-bottom">
           <p class="local-status"><i></i>Local workspace</p>
           <div class="person-footer">
-            <span class="avatar">{data.user.name[0]}</span><span
-              ><strong>{data.user.name}</strong><small>Demo identity</small
+            <a
+              class="avatar"
+              href="/settings"
+              aria-label="Profile and memory settings">{data.user.name[0]}</a
+            ><span
+              ><strong>{data.user.name}</strong><small
+                ><a href="/settings">Profile &amp; memory</a></small
               ></span
             >
             <form action="/auth/logout" method="POST">
@@ -520,21 +594,30 @@
       {/if}
     </aside>
     <main class="main-work">
-      <header class="topbar">
-        <div>
-          Your workspace <span>/</span>
-          {current ? activeName : "A new beginning"}
-        </div>
-        <div class="topbar-right">
-          <span class="lab-badge"
-            ><i></i>{busy ? "Working" : "Local experiment"}</span
-          >{#if current}<button
-              aria-label="Toggle behind the work"
-              onclick={() => (showInspector = !showInspector)}
-              ><PanelRight size={19} /></button
-            >{/if}
-        </div>
-      </header>
+      {#if current}<header class="conversation-toolbar">
+          {#key current.id}<ConversationTitle
+              title={current.title || "New conversation"}
+              onsave={(title) => editThread(current!.id, { title })}
+            />{/key}
+          <span
+            class="run-status"
+            class:sr-only={!busy && current.status !== "cancelled"}
+            >{busy
+              ? "Working"
+              : current.status === "cancelled"
+                ? "Stopped"
+                : "Ready"}</span
+          >
+          <button
+            aria-label="Toggle behind the work"
+            aria-expanded={showInspector}
+            title={showInspector
+              ? "Hide behind the work"
+              : "Show behind the work"}
+            onclick={() => (showInspector = !showInspector)}
+            ><PanelRight size={18} /></button
+          >
+        </header>{/if}
       {#if !current}<div class="start-page">
           <div class="greeting">
             <span class="eyebrow"
@@ -612,24 +695,7 @@
           {#if notice}<p role="alert" class="notice">{notice}</p>{/if}
         </div>
       {:else}<div class="conversation-layout">
-          <section class="chat-panel">
-            <div class="chat-heading">
-              <div>
-                <p class="eyebrow">
-                  {current.phase === "routing"
-                    ? "LET’S FIND YOUR STARTING POINT"
-                    : "YOUR AGENT WORKSPACE"}
-                </p>
-                <h2>{activeName}</h2>
-              </div>
-              <span class="run-status"
-                >{busy
-                  ? "Working"
-                  : current.status === "cancelled"
-                    ? "Stopped"
-                    : "Ready"}</span
-              >
-            </div>
+          <section class="chat-panel" aria-label={activeName}>
             <Conversation.Root class="chat-log"
               ><Conversation.Content class="chat-messages"
                 >{#if !messages.length}<div class="chat-empty">
@@ -774,7 +840,7 @@
           {#if showInspector}<aside class="inspector">
               <h3>Behind the work <ArrowUpRight size={17} /></h3>
               <div class="inspector-tabs">
-                {#each ["Route", "Activity", "Files"] as label}<button
+                {#each ["Route", "Activity", "Memory", "Files"] as label}<button
                     class:active={tab === label}
                     onclick={() => (tab = label)}
                     >{label}{label === "Files" &&
@@ -842,7 +908,29 @@
                     >{#each events as e}<div>
                         {e.type}{e.name ? ` / ${e.name}` : ""}
                       </div>{/each}
-                  </details>{:else}<p class="eyebrow">CONVERSATION FILES</p>
+                  </details>{:else if tab === "Memory"}
+                  <p class="eyebrow">RECALLED FOR THIS RUN</p>
+                  {@const recall = events.findLast(
+                    (e) => e.type === "CUSTOM" && e.name === "memory_recalled",
+                  )?.value}
+                  <p class="muted">
+                    {recall?.status ||
+                      "Memory activity appears when you send a message."}
+                  </p>
+                  {#each recall?.items || [] as memory}<div
+                      class="memory-recall"
+                    >
+                      <small>{memory.framework} · {memory.kind}</small>
+                      <p>{memory.text}</p>
+                    </div>{/each}
+                  <a class="memory-settings-link" href="/settings"
+                    >Profile &amp; memory settings →</a
+                  >
+                  <p class="muted">
+                    This shows context supplied to this run. Changing settings
+                    affects future requests.
+                  </p>
+                {:else}<p class="eyebrow">CONVERSATION FILES</p>
                   {#if uploads.length}<p class="eyebrow upload-section-label">
                       UPLOADED FILES
                     </p>

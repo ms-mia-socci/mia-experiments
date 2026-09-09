@@ -24,3 +24,10 @@ vite.config.ts.timestamp-*
 .local/
 test-results/
 playwright-report/
+
+# Terraform local artifacts (keep provider lock files)
+.terraform/
+*.tfstate*
+*.tfplan
+*.tfvars
+!*.tfvars.example

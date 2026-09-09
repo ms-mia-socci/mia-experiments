@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { chromium } from "playwright";
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -20,12 +21,21 @@ const inherited = Object.fromEntries(
       !name.startsWith("CODEX_"),
   ),
 );
+let memoryId = process.env.FIELDWORK_MEMORY_ID || "";
+try {
+  memoryId ||=
+    JSON.parse(readFileSync(resolve(local, "memory.json"), "utf8")).memoryId ||
+    "";
+} catch {}
 const env = {
   ...inherited,
   HOME: home,
   ANTHROPIC_API_KEY: keys.ANTHROPIC_API_KEY || "",
   OPENAI_API_KEY: keys.OPENAI_API_KEY || "",
   OPENAI_API_ENDPOINT: keys.OPENAI_API_ENDPOINT || "",
+  FIELDWORK_MEMORY_ID: memoryId,
+  FIELDWORK_AWS_CREDENTIALS_FILE: resolve(homedir(), ".aws/credentials"),
+  FIELDWORK_AWS_CONFIG_FILE: resolve(homedir(), ".aws/config"),
   FIELDWORK_DB: resolve(local, "fieldwork.sqlite"),
   FIELDWORK_WORKSPACES: resolve(local, "workspaces"),
   FIELDWORK_BROWSER_EXECUTABLE: chromium.executablePath(),
@@ -63,5 +73,5 @@ child.on("exit", (code) => {
   if (!stopping) process.exit(code || 0);
 });
 console.log(
-  `Fieldwork router lab: http://127.0.0.1:${port}\nStrands + Claude: ${keys.ANTHROPIC_API_KEY ? "configured" : "needs key"}; Codex: ${keys.OPENAI_API_KEY ? "configured" : "awaiting OpenAI API key"}\nLocal execution; no AWS deployment.`,
+  `Fieldwork router lab: http://127.0.0.1:${port}\nStrands + Claude: ${keys.ANTHROPIC_API_KEY ? "configured" : "needs key"}; Codex: ${keys.OPENAI_API_KEY ? "configured" : "awaiting OpenAI API key"}\nLocal agents; AWS Memory: ${memoryId ? "configured (opt-in per person)" : "not configured"}.`,
 );
