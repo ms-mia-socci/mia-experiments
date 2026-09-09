@@ -27,6 +27,7 @@ import {
   setSpanOutcome,
   withSpan,
 } from "./observability";
+import { publicRunError } from "./run-errors";
 export const activeRuns = new Map<string, AbortController>();
 export async function streamRun(thread: Thread, handoff = false) {
   const documents = await items<{ filename: string }>(`documents:${thread.id}`);
@@ -245,12 +246,9 @@ export async function streamRun(thread: Thread, handoff = false) {
         } catch (e) {
           endText();
           status = controller.signal.aborted ? "cancelled" : "error";
-          const message =
-            status === "cancelled"
-              ? "Run stopped."
-              : "The agent could not finish. Your conversation is saved; please try again.";
+          const failure = publicRunError(e, status === "cancelled");
           await setState("approval", null);
-          emit({ type: "RUN_ERROR", code: status.toUpperCase(), message });
+          emit({ type: "RUN_ERROR", ...failure });
           console.error(
             "[fieldwork]",
             (e as Error).name,

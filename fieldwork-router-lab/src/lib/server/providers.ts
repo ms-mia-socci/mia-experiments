@@ -77,7 +77,9 @@ export async function runStrands(ctx: RunContext, coordinator: boolean) {
   const model = new AnthropicModel({
     apiKey: process.env.ANTHROPIC_API_KEY!,
     modelId: "claude-sonnet-4-6",
-    maxTokens: coordinator ? 1200 : 6000,
+    // Strands includes tool arguments in the model output. Document saves can
+    // therefore consume several thousand tokens before the tool is invoked.
+    maxTokens: coordinator ? 2400 : 10000,
   });
   let calls = 0;
   const recommendation = strandsTool({
