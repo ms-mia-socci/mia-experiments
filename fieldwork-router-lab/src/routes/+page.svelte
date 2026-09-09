@@ -73,7 +73,7 @@
     connected = $state(false),
     notice = $state(""),
     showInspector = $state(true),
-    tab = $state("Route"),
+    tab = $state("Activity"),
     recommendation = $state<Recommendation | null>(null),
     approval = $state<Approval | null>(null),
     documents = $state<{ filename: string; url: string }[]>([]),
@@ -865,7 +865,7 @@
           {#if showInspector}<aside class="inspector">
               <h3>Behind the work <ArrowUpRight size={17} /></h3>
               <div class="inspector-tabs">
-                {#each ["Route", "Activity", "Memory", "Files"] as label}<button
+                {#each ["Activity", "Memory", "Files"] as label}<button
                     class:active={tab === label}
                     onclick={() => (tab = label)}
                     >{label}{label === "Files" &&
@@ -875,44 +875,7 @@
                   >{/each}
               </div>
               <div class="inspector-content">
-                {#if tab === "Route"}<p class="eyebrow">A LITTLE DIRECTION</p>
-                  <ol class="route-steps">
-                    <li>
-                      <b>01</b>
-                      <div>
-                        <strong>Bring the task</strong>
-                        <p>Your idea, in your own words.</p>
-                      </div>
-                    </li>
-                    <li>
-                      <b>02</b>
-                      <div>
-                        <strong
-                          >{current.phase === "routing"
-                            ? "Find a fit"
-                            : "Framework chosen"}</strong
-                        >
-                        <p>
-                          {current.phase === "routing"
-                            ? "Strands considers the tools each agent has."
-                            : activeName}
-                        </p>
-                      </div>
-                    </li>
-                    <li class:muted={current.phase === "routing"}>
-                      <b>03</b>
-                      <div>
-                        <strong>Get to work</strong>
-                        <p>Keep the conversation and its files together.</p>
-                      </div>
-                    </li>
-                  </ol>
-                  <div class="inspector-note">
-                    A recommendation is based on this workspace’s configured
-                    capabilities, not a universal ranking of models.
-                  </div>{:else if tab === "Activity"}<p class="eyebrow">
-                    TOOLS & EVENTS
-                  </p>
+                {#if tab === "Activity"}<p class="eyebrow">TOOLS & EVENTS</p>
                   {#if workspaceState.observability}<div class="trace-card">
                       <div>
                         <strong>Cloud trace</strong>

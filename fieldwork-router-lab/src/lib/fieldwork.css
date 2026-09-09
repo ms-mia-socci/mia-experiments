@@ -757,45 +757,6 @@ i {
   font-size: 12px;
   line-height: 1.8;
 }
-.route-steps {
-  padding: 0;
-  margin: 25px 0;
-  list-style: none;
-}
-.route-steps li {
-  display: flex;
-  gap: 13px;
-  padding-bottom: 30px;
-}
-.route-steps b {
-  border: 1px solid #dbe2d1;
-  border-radius: 50%;
-  width: 27px;
-  height: 27px;
-  display: grid;
-  place-items: center;
-  font-size: 9px;
-  font-weight: 400;
-  color: #8b9b79;
-  flex-shrink: 0;
-}
-.route-steps strong {
-  font-size: 12px;
-  font-weight: 500;
-}
-.route-steps p {
-  font-size: 11px;
-  color: #97a187;
-  line-height: 1.7;
-  margin-top: 5px;
-}
-.inspector-note {
-  padding: 16px;
-  border-radius: 9px;
-  background: #edf1e5;
-  color: #8a987b;
-  font-size: 11px;
-}
 .inspector-footer {
   display: flex;
   gap: 10px;
