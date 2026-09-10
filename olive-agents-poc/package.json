@@ -1,0 +1,32 @@
+{
+  "name": "olive-agents-poc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
+    "poll:local": "tsx src/local.ts",
+    "verify:harness": "tsx scripts/verify-harness.ts",
+    "deploy": "bash scripts/deploy.sh"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-agentcore": "3.1129.0",
+    "@aws-sdk/client-dynamodb": "3.1129.0",
+    "@aws-sdk/client-secrets-manager": "3.1129.0",
+    "@aws-sdk/lib-dynamodb": "3.1129.0",
+    "dotenv": "17.2.2",
+    "zod": "4.6.1"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.152",
+    "@types/node": "24.3.1",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2"
+  }
+}
