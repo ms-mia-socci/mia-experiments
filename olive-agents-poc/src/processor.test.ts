@@ -12,12 +12,91 @@ import {
   type ResolvedConversation,
 } from "./domain.js";
 import type { HarnessClient } from "./harness.js";
-import type { MedusaClient } from "./medusa.js";
+import { MedusaClient } from "./medusa.js";
 import { buildHarnessInput, OliveMessageProcessor } from "./processor.js";
 import { MemoryProcessedMessageStore } from "./state.js";
 
 const FIRST_RESPONSE = "Outside-hours response";
 const IDENTITY_RESPONSE = "Please confirm first name, last name, and DOB";
+
+for (const failure of ["oversized", "http", "pagination"] as const) {
+  test(`isolates ${failure} history failures and still delivers healthy threads exactly once`, async () => {
+    for (const brokenFirst of [true, false]) {
+      const healthy = ["before", "after"].map((id) => {
+        const resolved = resolvedConversation(FIRST_TOPIC_CLIENT_ID);
+        resolved.recent = { ...resolved.recent, conversation_id: id, message_id: id };
+        resolved.trigger = { ...resolved.trigger, id, conversation_id: id, sent_at: new Date().toISOString() };
+        resolved.history = [resolved.trigger];
+        return resolved;
+      });
+      const broken = { ...healthy[0]!.recent, conversation_id: "broken", message_id: "broken-latest", ticket_id: "broken-ticket" };
+      const rows = brokenFirst
+        ? [broken, ...healthy.map((r) => r.recent)]
+        : [healthy[0]!.recent, broken, healthy[1]!.recent];
+      let brokenRequests = 0;
+      const historyClient = new MedusaClient("https://staging.medusa.test", "secret", async (url) => {
+        if (url.includes("/broken/")) {
+          brokenRequests++;
+          if (failure === "http") throw new Error("Medusa HTTP 503");
+          const after = Number(new URL(url).searchParams.get("after_sequence") ?? 0);
+          return {
+            items: Array.from({ length: 200 }, (_, index) => ({
+              ...healthy[0]!.trigger, id: `broken-${after + index + 1}`,
+              conversation_id: "broken", sequence: after + index + 1,
+            })),
+            has_more: true,
+            next_after_sequence: failure === "pagination" ? 200 : after + 200,
+          };
+        }
+        const resolved = healthy.find((r) => url.includes(`/conversations/${r.recent.conversation_id}/`));
+        assert.ok(resolved);
+        return { items: [resolved.trigger], has_more: false };
+      });
+      const medusa = {
+        recent: async () => rows,
+        expandRecent: historyClient.expandRecent.bind(historyClient),
+        resolve: async (row: typeof broken) => {
+          const resolved = healthy.find((r) => r.recent.message_id === row.message_id);
+          assert.ok(resolved, "Failed histories must never reach resolution or delivery");
+          return resolved;
+        },
+      } as unknown as MedusaClient;
+      const sent: string[] = [];
+      const invoked: string[] = [];
+      const failures: unknown[][] = [];
+      const store = new MemoryProcessedMessageStore();
+      const processor = new OliveMessageProcessor(config(false), medusa, {
+        decide: async (input: HarnessInput) => {
+          invoked.push(input.trigger.messageId);
+          return { action: "SEND_MESSAGE", reason: "FIRST_TOPIC", topic: "refill", message: FIRST_RESPONSE };
+        },
+      } as unknown as HarnessClient, {
+        sendMessage: async (_member: string, content: string) => {
+          sent.push(content);
+          return { success: true, data: { id: `event-${sent.length}`, type: "olive.message.send" } };
+        },
+      } as unknown as ConnectClient, store, {
+        info() {}, warn() {}, error: (...args: unknown[]) => { failures.push(args); },
+      });
+      const first = await processor.poll();
+      assert.deepEqual(first, { discovered: 3, candidates: 2, completed: 2, sent: 2, dryRunSends: 0, skipped: 0, duplicates: 0, discoveryErrors: 1, errors: 1 });
+      assert.equal(brokenRequests, failure === "oversized" ? 20 : failure === "pagination" ? 2 : 1);
+      assert.equal(store.records.has("broken-latest"), false);
+      assert.deepEqual(invoked, ["before", "after"]);
+      assert.deepEqual(sent, [FIRST_RESPONSE, FIRST_RESPONSE]);
+      assert.equal(failures[0]![0], "Olive conversation discovery failed; continuing batch");
+      assert.deepEqual(failures[0]![1], {
+        conversationId: "broken", ticketId: "broken-ticket",
+        error: failure === "oversized" ? "Error: Medusa history exceeded 4000 messages" : failure === "pagination" ? "Error: Medusa history pagination did not advance" : "Error: Medusa HTTP 503",
+      });
+      const second = await processor.poll();
+      assert.equal(second.duplicates, 2);
+      assert.equal(second.discoveryErrors, 1);
+      assert.equal(sent.length, 2);
+      assert.equal(invoked.length, 2);
+    }
+  });
+}
 
 test("sends the configured response for a first-topic decision exactly once", async () => {
   const sent: Array<{ memberId: string; content: string }> = [];

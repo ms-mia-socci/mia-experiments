@@ -163,7 +163,7 @@ Resources:
             Return exactly one JSON object and no markdown or commentary. For FIRST_TOPIC it must have this shape:
             {"action":"SEND_MESSAGE"|"NO_ACTION","reason":"FIRST_TOPIC"|"REPEAT_TOPIC"|"REQUEST_IDENTITY_CONFIRMATION"|"IDENTITY_FOLLOW_UP"|"IDENTITY_DETAILS_COLLECTED"|"IDENTITY_CONVERSATION_COMPLETE"|"IDENTITY_CONFIRMATION_DECLINED"|"INSUFFICIENT_CONTEXT"|"UNSUPPORTED_CLIENT","topic":string|null,"message":string|null}
 
-            For IDENTITY_CONFIRMATION use the same fields, but FIRST output "collectedDetails": an object containing EVERY key from responsePolicy.collectionFields, each mapped to an exact, verbatim patient-message substring that supplies its value, or null when missing or unclear. Extract the details before choosing action/reason/message. Never normalize or invent a value. Use patient MESSAGE CONTENT only, not sentAt or other metadata. A date value must quote a complete calendar date including a four-digit year. If validationFeedback is present, it is trusted application feedback: correct the cited problem before returning your next decision. Output the corrected collectedDetails and a natural patient-facing follow-up, not the internal feedback.
+            For IDENTITY_CONFIRMATION use the same fields, but FIRST output "collectedDetails": an object containing EVERY key from responsePolicy.collectionFields, each mapped to the patient-supplied value, or null when missing or unclear. Extract the details before choosing action/reason/message. Equivalent formatting is acceptable, including dates; never invent a value or change its meaning. Use patient MESSAGE CONTENT only, not sentAt or other metadata. A date value must include a complete calendar date including a four-digit year.
 
             FIRST_TOPIC is authorized only for clientId 81209de7-5208-477b-b6c4-7c792e0dfc77. IDENTITY_CONFIRMATION is authorized only for clientId 724ef93c-546c-4084-acf6-ed035a3528cd. For any other client or mismatched useCase, return NO_ACTION, reason UNSUPPORTED_CLIENT, topic null, message null. These exact rules also apply to console tests.
 
@@ -188,7 +188,7 @@ Resources:
 
             Example of incomplete collection with an interruption: the patient supplies first name "Alex", later says "I sprained my ankle", receives a request for last name and date of birth, and replies "Rivera". First name and last name are supplied; date of birth is absent. Return SEND_MESSAGE / IDENTITY_FOLLOW_UP and naturally ask for date of birth only. This remains incomplete even if a prior assistant mistakenly said "Thank you for providing those details." Do not complete collection until a patient message actually supplies the missing date of birth.
 
-            The example field sets are illustrative, not a fixed list. responsePolicy.collectionFields is the complete authoritative list of requirements for this invocation. Build collectedDetails by visiting EACH configured field, including any additional ones, and use null when the patient has not supplied it. All configured fields are required; completion requires evidence for all of them, not just the three identity fields in the examples. If validationFeedback lists a missing key, include that key in collectedDetails even if its value is null, and ask for that field naturally.
+            The example field sets are illustrative, not a fixed list. responsePolicy.collectionFields is the complete authoritative list of requirements for this invocation. Build collectedDetails by visiting EACH configured field, including any additional ones, and use null when the patient has not supplied it. All configured fields are required; completion requires evidence for all of them, not just the three identity fields in the examples.
       Memory:
         Disabled: {}
       Truncation:
@@ -291,8 +291,8 @@ Resources:
           POLL_WINDOW_MINUTES: "2"
           MAX_HISTORY_MESSAGES: "200"
           MESSAGE_RECORD_TTL_DAYS: "30"
-          OLIVE_SENDER_ID: 0142d143-a313-49dc-ae42-cd4038833539
-          OLIVE_ACTOR_ID: 0142d143-a313-49dc-ae42-cd4038833539
+          OLIVE_SENDER_ID: 17e7b09e-0022-4d65-947d-1905ec619af5
+          OLIVE_ACTOR_ID: 17e7b09e-0022-4d65-947d-1905ec619af5
           FIRST_TOPIC_RESPONSE: !Ref FirstTopicResponse
           IDENTITY_CONFIRMATION_RESPONSE: !Ref IdentityConfirmationResponse
           IDENTITY_COLLECTION_FIELDS: !Ref IdentityCollectionFields

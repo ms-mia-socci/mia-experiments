@@ -24,10 +24,10 @@ const configSchema = z.object({
   MESSAGE_RECORD_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   OLIVE_SENDER_ID: z
     .string()
-    .default("0142d143-a313-49dc-ae42-cd4038833539"),
+    .default("17e7b09e-0022-4d65-947d-1905ec619af5"),
   OLIVE_ACTOR_ID: z
     .string()
-    .default("0142d143-a313-49dc-ae42-cd4038833539"),
+    .default("17e7b09e-0022-4d65-947d-1905ec619af5"),
   FIRST_TOPIC_RESPONSE: z.string().min(1).max(1600),
   IDENTITY_CONFIRMATION_RESPONSE: z.string().min(1).max(1600),
   IDENTITY_COLLECTION_FIELDS: z.string().default(JSON.stringify(DEFAULT_IDENTITY_FIELDS))

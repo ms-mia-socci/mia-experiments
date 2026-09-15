@@ -27,10 +27,6 @@ const client = new BedrockAgentCoreClient({ region, maxAttempts: 2 });
 const harness = new HarnessClient(region, arn, "staging", {
   send: (command) => {
     if (localPrompt) command.input.systemPrompt = [{ text: localPrompt }];
-    if (process.env.VERIFY_DEBUG === "true") {
-      const input = JSON.parse(command.input.messages![0]!.content![0]!.text!);
-      if (input.validationFeedback) console.log(JSON.stringify({ validationFeedback: input.validationFeedback }));
-    }
     return client.send(command);
   },
 });
@@ -90,6 +86,7 @@ const cases: Scenario[] = [
   { name: "identity-full-name", input: identity("Tim Carter"), action: "SEND_MESSAGE", reason: "IDENTITY_FOLLOW_UP", mentions: [dob], avoids: [asksNames] },
   { name: "identity-dob-first", input: identity("My date of birth is January 1, 1990."), action: "SEND_MESSAGE", reason: "IDENTITY_FOLLOW_UP", mentions: [/first.*last|full name/i], avoids: [/(?:please|could you|can you|what is)[^.!?]*(?:date of birth|birth\s*date|birthday|\bDOB\b)/i] },
   { name: "identity-answer", input: identity("Tim Carter, January 1, 1990."), action: "SEND_MESSAGE", reason: "IDENTITY_DETAILS_COLLECTED", avoids: [verificationClaim, /Tim|Carter|1990/] },
+  { name: "identity-dob-correction", input: identity("Oh, it's actually 1/1/1991", [previous(initialRequest, "care_team_to_member"), previous("Tim Carter, January 1, 1990."), previous("Thank you for providing those details.", "care_team_to_member")]), action: "SEND_MESSAGE", reason: "IDENTITY_DETAILS_COLLECTED", avoids: [asksNames, verificationClaim] },
   { name: "identity-incomplete-date", input: identity("Tim Carter, January 1"), action: "SEND_MESSAGE", reason: "IDENTITY_FOLLOW_UP", mentions: [/year/i], avoids: [asksNames] },
   { name: "identity-invalid-date", input: identity("Tim Carter, February 30, 1990"), action: "SEND_MESSAGE", reason: "IDENTITY_FOLLOW_UP", mentions: [dob], avoids: [verificationClaim] },
   { name: "identity-declined", input: identity("Stop messaging me. I do not want to provide these details."), action: "NO_ACTION", reason: "IDENTITY_CONFIRMATION_DECLINED" },

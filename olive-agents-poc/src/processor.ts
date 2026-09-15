@@ -28,6 +28,7 @@ export type PollSummary = {
   dryRunSends: number;
   skipped: number;
   duplicates: number;
+  discoveryErrors: number;
   errors: number;
 };
 
@@ -46,32 +47,50 @@ export class OliveMessageProcessor {
   async poll(): Promise<PollSummary> {
     const since = Date.now() - this.config.POLL_WINDOW_MINUTES * 60_000;
     const recent = await this.medusa.recent(this.config.POLL_WINDOW_MINUTES);
-    const candidates = await this.medusa.expandRecent(recent, since);
     const summary: PollSummary = {
       discovered: recent.length,
-      candidates: candidates.length,
+      candidates: 0,
       completed: 0,
       sent: 0,
       dryRunSends: 0,
       skipped: 0,
       duplicates: 0,
+      discoveryErrors: 0,
       errors: 0,
     };
 
-    for (const candidate of candidates) {
+    // Isolate history discovery as well as individual message processing. A
+    // failed thread must not discard healthy candidates or abort the batch.
+    for (const conversation of recent) {
+      let candidates: RecentConversation[];
       try {
-        const outcome = await this.processCandidate(candidate);
-        summary[outcome] += 1;
-        if (outcome !== "duplicates") {
-          summary.completed += 1;
-        }
+        candidates = await this.medusa.expandRecent([conversation], since);
       } catch (error) {
+        summary.discoveryErrors += 1;
         summary.errors += 1;
-        this.logger.error("Olive message processing failed", {
-          messageId: candidate.message_id,
-          conversationId: candidate.conversation_id,
+        this.logger.error("Olive conversation discovery failed; continuing batch", {
+          conversationId: conversation.conversation_id,
+          ticketId: conversation.ticket_id,
           error: safeError(error),
         });
+        continue;
+      }
+      summary.candidates += candidates.length;
+      for (const candidate of candidates) {
+        try {
+          const outcome = await this.processCandidate(candidate);
+          summary[outcome] += 1;
+          if (outcome !== "duplicates") {
+            summary.completed += 1;
+          }
+        } catch (error) {
+          summary.errors += 1;
+          this.logger.error("Olive message processing failed", {
+            messageId: candidate.message_id,
+            conversationId: candidate.conversation_id,
+            error: safeError(error),
+          });
+        }
       }
     }
 

@@ -7,8 +7,8 @@
       "type": "olive.message.send",
       "data": {
         "member_id": "51b18566-225f-4451-89b4-b88bf0e72df1",
-        "sender_id": "0142d143-a313-49dc-ae42-cd4038833539",
-        "actor_id": "0142d143-a313-49dc-ae42-cd4038833539",
+        "sender_id": "17e7b09e-0022-4d65-947d-1905ec619af5",
+        "actor_id": "17e7b09e-0022-4d65-947d-1905ec619af5",
         "content": "testing testing 123"
       }
     }'

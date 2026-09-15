@@ -8,7 +8,6 @@ import {
   type HarnessDecision,
   type HarnessInput,
 } from "./domain.js";
-import { collectionFeedback } from "./collection.js";
 
 type HarnessInvoker = {
   send(command: InvokeHarnessCommand): Promise<{
@@ -29,14 +28,7 @@ export class HarnessClient {
   }
 
   async decide(input: HarnessInput): Promise<HarnessDecision> {
-    let request = input;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const decision = await this.invoke(request);
-      const feedback = collectionFeedback(decision, input);
-      if (!feedback) return decision;
-      request = { ...input, validationFeedback: feedback };
-    }
-    throw new Error("Harness collection evidence failed validation after a corrective retry");
+    return this.invoke(input);
   }
 
   private async invoke(input: HarnessInput): Promise<HarnessDecision> {

@@ -138,7 +138,6 @@ export type HarnessInput = {
     message: string;
     collectionFields?: z.infer<typeof collectionFieldSchema>[];
   };
-  validationFeedback?: string;
   trigger: {
     messageId: string;
     conversationId: string;
